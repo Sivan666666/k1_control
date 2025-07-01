@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/demo.dir/main.cpp.o -o demo  -Wl,-rpath,"/home/sivan/下载/install/Linux/c&c++/x86_64-linux-gnu/shared" "/home/sivan/下载/install/Linux/c&c++/x86_64-linux-gnu/shared/libjakaAPI_2_3_1_0.so" -lpthread

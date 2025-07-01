@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.7.2)    # Minimum CMake Version 
+project(sdk_test VERSION 1.0)     # Project Definition
+
+# C++ Standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED true)
+
+# Source Directory Information
+message(${CMAKE_SOURCE_DIR})
+
+# Executable Creation
+add_executable(demo main.cpp)
+
+# Set the header file path of the SDK included in the project
+target_include_directories(demo PUBLIC ${CMAKE_SOURCE_DIR}/c&c++/inc_of_c++)
+  
+# Set the SDK dynamic library link path
+target_link_libraries(demo ${CMAKE_SOURCE_DIR}/c&c++/x86_64-linux-gnu/shared/libjakaAPI_2_3_1_0.so pthread)
