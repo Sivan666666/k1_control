@@ -1,4 +1,0 @@
-/home/sivan/下载/install/Linux/build/CMakeFiles/demo.dir
-/home/sivan/下载/install/Linux/build/CMakeFiles/move_fling.dir
-/home/sivan/下载/install/Linux/build/CMakeFiles/edit_cache.dir
-/home/sivan/下载/install/Linux/build/CMakeFiles/rebuild_cache.dir

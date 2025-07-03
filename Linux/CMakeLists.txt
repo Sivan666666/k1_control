@@ -24,3 +24,8 @@ target_link_libraries(demo ${COMMON_LIBS})
 add_executable(move_fling main2.cpp)
 target_include_directories(move_fling PUBLIC ${SDK_INCLUDE_DIR})
 target_link_libraries(move_fling ${COMMON_LIBS})
+
+# 创建第一个可执行文件
+add_executable(turn_cloth_demo turn_cloth_demo.cpp)
+target_include_directories(turn_cloth_demo PUBLIC ${SDK_INCLUDE_DIR})
+target_link_libraries(turn_cloth_demo ${COMMON_LIBS})
