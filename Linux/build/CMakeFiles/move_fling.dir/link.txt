@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/move_fling.dir/main2.cpp.o -o move_fling  -Wl,-rpath,"/home/sivan/下载/install/Linux/c&c++/x86_64-linux-gnu/shared" "/home/sivan/下载/install/Linux/c&c++/x86_64-linux-gnu/shared/libjakaAPI_2_3_1_0.so" -lpthread
