@@ -1,3 +1,7 @@
+/*
+    正向运动学(forward kinematics) and 逆向运动学(inverse kinematics)
+ */
+
 #include <JAKAZuRobot.h>
 #include <cassert>
 #include <chrono>
@@ -11,16 +15,19 @@
 
 int main()
 {
+    // 初始化
     JAKAZuRobot robot;
     RobotStatus robotStatus;
     errno_t ret;
-    
+    // 登录
     ret = robot.login_in("192.168.88.142");
     ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "login");
-
+    // 初始位姿 (7 DoF 关节角度)
     JointValue start_pos[2] = { { 90 * deg_tp_rad, 90 * deg_tp_rad, 90 * deg_tp_rad, 90 * deg_tp_rad, 90 * deg_tp_rad, 90 * deg_tp_rad, 90 * deg_tp_rad},
                                  { 90 * deg_tp_rad, -45 * deg_tp_rad, 0, -100 * deg_tp_rad, 0, -35 * deg_tp_rad, 90 * deg_tp_rad} };    
     CartesianPose pos[2];
+
+    // forward kinematics: 已知关节空间位置（7个关节角度），计算机械臂末端的笛卡尔空间位姿
     robot.kine_forward(LEFT, &start_pos[0], &pos[0]);
     robot.kine_forward(RIGHT, &start_pos[1], &pos[1]);
     printf("left pos = %lf, %lf, %lf, %lf, %lf, %lf\n", pos[0].tran.x, pos[0].tran.y, pos[0].tran.z, pos[0].rpy.rx, pos[0].rpy.ry, pos[0].rpy.rz);

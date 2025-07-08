@@ -9,24 +9,27 @@
 #define JK_PI (3.141592653589793)
 
 int main()
-{
+{   
+    // 初始化
     JAKAZuRobot robot;
     RobotStatus robotStatus;
     errno_t ret;
     JointValue jstep_pos[2] { { 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 }, { 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 } };
     JointValue jstep_neg[2] { { -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1 }, { 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 } };
     
+    // 登录
     ret = robot.login_in("127.0.0.1");
     ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "login");
-
+    // 上电
     ret = robot.power_on();
     ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "power on");
 
     // ret = robot.disable_robot();
 
+    // 清除可能的错误状态
     robot.clear_error();
 
-
+    // 使能机器人，准备运动
     ret = robot.enable_robot();
     if (ret != ERR_SUCC)
     {
@@ -36,6 +39,7 @@ int main()
 
     for (int i = 0; i < 5; i++)
     {
+        // 方式1: 相对运动(INCR模式)
         MoveMode moveop[2] = {INCR, INCR};
         double vel[2] = {1, 1};
         double acc[2] = {1, 1};
@@ -68,6 +72,7 @@ int main()
     // 阻塞
     for (int i = 0; i < 5; i++)
     {
+        // 方式2: 绝对运动(ABS模式)
         MoveMode moveop[2] = {ABS, ABS};
         double vel[2] = {0.1, 0.1};
         double acc[2] = {0.1, 0.1};
