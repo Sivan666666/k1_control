@@ -100,6 +100,7 @@ int main()
 
     // 4. 执行动作
     for (const auto& target_poses : circular_path) {
+        // 发送控制命令
         ret = robot.robot_run_multi_movl(
             -1,             // -1表示双轴同步运动
             move_mode,      // 运动模式
@@ -118,9 +119,27 @@ int main()
         std::cout << "Executing point: "
                   << "Left[" << target_poses[0].tran.x << ", " << target_poses[0].tran.y << ", " << target_poses[0].tran.z << "]"
                   << " Right[" << target_poses[1].tran.x << ", " << target_poses[1].tran.y << ", " << target_poses[1].tran.z << "]" << std::endl;
-        
+
+        // 读取当前状态
+        JointValue output_jpos[2];
+        CartesianPose output_cpos[2];
+        robot.edg_get_stat(0, &output_jpos[0], &output_cpos[0]);
+        robot.edg_get_stat(1, &output_jpos[1], &output_cpos[1]);
+        std::cout << "Current joint positions: "
+                  << "Left[" << output_jpos[0].jVal[0] << ", " << output_jpos[0].jVal[1] << ", " << output_jpos[0].jVal[2] << ", "
+                  << output_jpos[0].jVal[3] << ", " << output_jpos[0].jVal[4] << ", " << output_jpos[0].jVal[5] << ", " << output_jpos[0].jVal[6] << "]. "
+                  << "Right[" << output_jpos[1].jVal[0] << ", " << output_jpos[1].jVal[1] << ", " << output_jpos[1].jVal[2] << ", "
+                  << output_jpos[1].jVal[3] << ", " << output_jpos[1].jVal[4] << ", " << output_jpos[1].jVal[5] << ", " << output_jpos[1].jVal[6] << "]. " 
+                  << std::endl;
+        std::cout << "Current Cartesian positions: "
+                  << "Left[" << output_cpos[0].tran.x << ", " << output_cpos[0].tran.y << ", " << output_cpos[0].tran.z << ", "
+                  << output_cpos[0].rpy.rx << ", " << output_cpos[0].rpy.ry << ", " << output_cpos[0].rpy.rz << "]. "
+                  << "Right[" << output_cpos[1].tran.x << ", " << output_cpos[1].tran.y << ", " << output_cpos[1].tran.z << ", "
+                  << output_cpos[1].rpy.rx << ", " << output_cpos[1].rpy.ry << ", " << output_cpos[1].rpy.rz << "]. "
+                  << std::endl;
+
         // 添加短暂延时（可选）
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     
     std::cout << "Circular path execution completed" << std::endl;
