@@ -29,6 +29,7 @@ set(SOURCE_FILES
     src/main.cpp
     src/main2.cpp
     src/turn_cloth_demo.cpp
+    src/turn_circle.cpp
 )
 
 # 生成可执行文件

@@ -9,21 +9,25 @@
 #include "timespec.h"
 #define rad2deg(x) ((x)*180.0/M_PI)
 #define deg2rad(x) ((x)*M_PI/180.0)
+
+// 将 timespec 结构体（包含秒和纳秒）转换为纳秒单位的整数值
 int64_t edg_timespec2ns(timespec t)
 {
     return t.tv_sec * 1000000000 + t.tv_nsec;
 }
+
+
 void edg_sync(timespec reftime_, int64_t *sys_time_offset)
 {
-    auto reftime = edg_timespec2ns(reftime_);
-    static int64_t integral = 0;
-    int64_t cycletime = 1000000;
-    int64_t delta = (reftime - 0) % cycletime;
-    if (delta > (cycletime / 2))
+    auto reftime = edg_timespec2ns(reftime_);   // 将参考时间转换为纳秒
+    static int64_t integral = 0;    // 声明静态变量 integral 用于积分项（类似PID控制中的I项）
+    int64_t cycletime = 1000000;    // 定义周期时间 cycletime 为1毫秒
+    int64_t delta = (reftime - 0) % cycletime;  // 计算当前时间与周期时间的余数（相位差）
+    if (delta > (cycletime / 2))    // 如果相位差超过半个周期，调整到负半周期（-500,000~500,000ns范围）
     {
         delta = delta - cycletime;
     }
-    if (delta > 0)
+    if (delta > 0)  // 根据相位差方向调整积分项（类似PI控制器的积分部分）
     {
         integral++;
     }
@@ -31,15 +35,15 @@ void edg_sync(timespec reftime_, int64_t *sys_time_offset)
     {
         integral--;
     }
-    if (sys_time_offset)
+    if (sys_time_offset)    // 计算最终的时间偏移量
     {
-        *sys_time_offset = -(delta / 100) - (integral / 20);  //类似PI调节
+        *sys_time_offset = -(delta / 100) - (integral / 20);  //类似PI调节, 比例系数：1/100, 积分系数：1/20
     }
 }
 
 int servoj_test(JAKAZuRobot &robot)
 {
-    JointValue jpos[2];
+    JointValue jpos[2];     // 关节位置
     memset(&jpos,0,sizeof(jpos));
     
     double v[] = {deg2rad(30),deg2rad(30)};
@@ -77,11 +81,17 @@ int servoj_test(JAKAZuRobot &robot)
     //     rob1_change_to_servo = true;
 
     // });
+
+    // 设置线程优先级（确保实时性）
     sched_param sch;
     sch.sched_priority = 90;
     pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
-    robot.servo_move_enable(1, 0);
-    robot.servo_move_enable(1, 1);
+
+    // 启用Servo模式
+    robot.servo_move_enable(1, 0);  // 0表示左臂
+    robot.servo_move_enable(1, 1);  // 1表示右臂
+    
+    // 获取初始时间
     timespec next;
     clock_gettime(CLOCK_REALTIME, &next);
     
@@ -89,34 +99,37 @@ int servoj_test(JAKAZuRobot &robot)
     for(int i = 0;;i++)
     {
         timespec max_wkup_time;
-        robot.edg_recv(&next);
+        robot.edg_recv(&next);      // 
         timespec cur_time;
         timespec cc;
         clock_gettime(CLOCK_REALTIME, &cc);
 
-        JointValue jpos[2];
+        JointValue jpos[2];     
         CartesianPose cpos[2];
         int64_t recv_time = 0;
-        robot.edg_get_stat(0, &jpos[0], &cpos[0]);
+        robot.edg_get_stat(0, &jpos[0], &cpos[0]);  // 获取当前机器人状态
         robot.edg_get_stat(1, &jpos[1], &cpos[1]);
 
         EdgRobotStat rbstat[2];
-        robot.edg_get_stat(0,&rbstat[0]);
+        robot.edg_get_stat(0,&rbstat[0]);   // 获取当前机器人状态
         robot.edg_get_stat(1,&rbstat[1]);
 
         unsigned long int details[3];
-        robot.edg_stat_details(details);
-    
+        robot.edg_stat_details(details);    // 
+        
+        // 计算轨迹
         double t = (i - 0)/10000.0;
         double kk = 15;
         jpos_cmd.jVal[0] = sin(kk*t)*30/180.0*3.14;
         jpos_cmd.jVal[1] = -cos(kk*t)*20 /180.0*3.14 + 20/180.0*3.14;
         jpos_cmd.jVal[3] = -cos(kk*t)*10/180.0*3.14 + 10/180.0*3.14;
+
+        // 发送指令
         robot.edg_servo_j(0, &jpos_cmd, MoveMode::ABS);
         robot.edg_servo_j(1, &jpos_cmd, MoveMode::ABS);
         robot.edg_send();
         
-#if 1
+#if 1   // 开启调试：当设置为 1 时，详细的调试信息会被打印
         printf("%ld %ld %ld %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %ld %ld %ld\n", 
         //std::chrono::duration_cast<std::chrono::nanoseconds>(cur.time_since_epoch()).count(),
         edg_timespec2ns(cc),
@@ -127,10 +140,8 @@ int servoj_test(JAKAZuRobot &robot)
         jpos_cmd.jVal[0], jpos_cmd.jVal[1], jpos_cmd.jVal[3],
         details[0], details[1], details[2]
         );
-
-
-        
 #endif
+
         //等待下一个周期
         timespec dt;
         dt.tv_nsec = 1000000;
@@ -227,8 +238,8 @@ int main()
     robot.login_in("127.0.0.1");
     // robot.login_in("192.168.2.9");
     robot.clear_error();
-    robot.servo_move_enable(0, -1); //关闭所有机器人的伺服模式
-    robot.servo_move_use_none_filter();
+    robot.servo_move_enable(0, -1); // 关闭所有机器人的伺服模式
+    robot.servo_move_use_none_filter(); // SERVO模式下不使用滤波器
     robot.power_on();
     robot.enable_robot();
     robot.motion_abort();

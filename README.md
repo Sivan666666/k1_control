@@ -2,7 +2,7 @@
 
 jaka k1 dual-arm robot contorl of c++
 
-## 1. install dependence
+## 1. Install dependence
 
 install protobuf-3.6.1 (include libprotobuf.so.17):
 
@@ -23,7 +23,7 @@ sudo ldconfig
 export LD_LIBRARY_PATH=/usr/local/protobuf-3.6.1/lib:$LD_LIBRARY_PATH
 ```
 
-## 2. How to use:
+## 2. How to use cpp build:
 
 ### build
 
@@ -60,3 +60,32 @@ set(SOURCE_FILES
 ```
 
 build 时会基于 .cpp 文件在 `build/` 目录下生成可执行文件
+
+## 3. How to build in Ros workspace:
+
+set `k1_control\` root path in `/k1_control/ros/CMakeLists.txt` :
+
+```
+# 设置源码路径
+set(K1_CONTROL_ROOT "/home/shu/robo_arm/k1_control")
+```
+
+setting workspace:
+
+`mkdir robo_ws/src && cd robo_ws`
+
+`ln -sf path/to/k1_control/ros src/k1_control_ros`
+
+install dependence:
+
+`rosdep install --from-paths src --ignore-src -y`
+
+build Ros package:
+
+`catkin build k1_control_ros`
+
+run node:
+
+`source devel/setup.bash`
+
+`roslaunch k1_control_ros state_pub.launch`
