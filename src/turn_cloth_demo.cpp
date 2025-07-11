@@ -6,52 +6,12 @@
 #include <thread>
 #include <vector>
 #include <common.h>
+#include <math.h>
+#include <string.h>
+#include <timespec.h>
 
 #define JK_PI (3.141592653589793)
 #define deg_to_rad (JK_PI / 180.0)
-
-
-// 生成圆形路径函数
-std::vector<std::array<CartesianPose, 2>> generate_circular_path(
-    const CartesianPose& left_center, 
-    const CartesianPose& right_center,
-    double radius,
-    double step_angle,  // 步长角度（度）
-    int cycles)
-{
-    std::vector<std::array<CartesianPose, 2>> path;
-    
-    // 计算总点数（360度/步长角度 * 循环次数）
-    int points_per_cycle = static_cast<int>(360.0 / step_angle);
-    int total_points = points_per_cycle * cycles;
-    
-    for (int i = 0; i <= total_points; ++i) {
-        double angle = i * step_angle * deg_to_rad;  // 当前角度（弧度）
-        
-        // 计算偏移量
-        double x_offset = radius * cos(angle);
-        double y_offset = radius * sin(angle);
-        
-        // 左臂路径点
-        CartesianPose left_point;
-        left_point.tran.x = left_center.tran.x + x_offset;
-        left_point.tran.y = left_center.tran.y + y_offset;
-        left_point.tran.z = left_center.tran.z;
-        left_point.rpy = left_center.rpy;
-        
-        // 右臂路径点
-        CartesianPose right_point;
-        right_point.tran.x = right_center.tran.x + x_offset;
-        right_point.tran.y = right_center.tran.y + y_offset;
-        right_point.tran.z = right_center.tran.z;
-        right_point.rpy = right_center.rpy;
-        
-        path.push_back({left_point, right_point});
-    }
-    
-    return path;
-}
-
 
 int main()
 {
@@ -60,88 +20,122 @@ int main()
     RobotStatus robotStatus;
     errno_t ret;
 
-    JointValue start_pos[2] = { { -90 * deg_to_rad, 21 * deg_to_rad, 60 * deg_to_rad, -110 * deg_to_rad, -74 * deg_to_rad, -57 * deg_to_rad, 0 * deg_to_rad},
-                                 { 85 * deg_to_rad, 21 * deg_to_rad, -65 * deg_to_rad, -105 * deg_to_rad, -105 * deg_to_rad, -71 * deg_to_rad, 0 * deg_to_rad} };  
-    MoveMode moveop[2] = {ABS, ABS};
-    double vel[2] = {2, 2};
-    double acc[2] = {2, 2};
-
     // 登录
     ret = robot.login_in("192.168.2.200"); // 替换为实际IP
     if (ret != ERR_SUCC) {
         std::cerr << "Login failed with error code: " << ret << std::endl;
         return -1;
     }
-
-    // 上电和使能
-    ret = robot.power_on();
-    ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "power on");
     robot.clear_error();
-    ret = robot.enable_robot();
-    ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "enable robot");
-    
-    // 2. 设置圆形路径参数
-    double radius = 30.0;       // 圆半径（mm）
-    double step_angle = 10.0;   // 步长角度（度）
-    int cycles = 4;             // 循环次数
+    robot.servo_move_enable(0, -1); // 关闭所有机器人的伺服模式
+    robot.servo_move_use_none_filter(); // SERVO模式下不使用滤波器
+    robot.power_on();
+    robot.enable_robot();
+    robot.motion_abort();
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
-    // 左右臂中心点
+    // 设置线程优先级（确保实时性）
+    sched_param sch;
+    sch.sched_priority = 90;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+
+    // 启用Servo模式
+    robot.servo_move_enable(1, 0);  // 0表示左臂
+    robot.servo_move_enable(1, 1);  // 1表示右臂
+
+    // 设置初始位置
+    JointValue start_pos[2] = { { -90 * deg_to_rad, 21 * deg_to_rad, 60 * deg_to_rad, -110 * deg_to_rad, -74 * deg_to_rad, -57 * deg_to_rad, 0 * deg_to_rad},
+                                 { 85 * deg_to_rad, 21 * deg_to_rad, -65 * deg_to_rad, -105 * deg_to_rad, -105 * deg_to_rad, -71 * deg_to_rad, 0 * deg_to_rad} };  
+    robot.edg_servo_j(0, &start_pos[0], MoveMode::ABS);
+    robot.edg_servo_j(1, &start_pos[1], MoveMode::ABS);
+    robot.edg_send();
+
+    // 定义圆锥参数
     CartesianPose left_center = {190, 490, 425, 0, 0, 0};
     CartesianPose right_center = {195, -520, 390, 0, 0, 0};
+    const double radius = 30.0; // 圆锥底面半径(mm)
+    const double cone_angle = 30.0 * deg_to_rad; // 圆锥半角(30度)
+    const double height = radius / tan(cone_angle); // 圆锥高度计算
 
-    // 生成圆形路径
-    auto circular_path = generate_circular_path(left_center, right_center, radius, step_angle, cycles);
+    // 计算圆锥顶点位置 (倒圆锥，顶点在下方)
+    CartesianPose left_vertex = left_center;
+    left_vertex.tran.z -= height;
+    CartesianPose right_vertex = right_center;
+    right_vertex.tran.z -= height;
 
-    // 3. 运动参数设置
-    MoveMode move_mode[2] = {ABS, ABS};      // 绝对坐标模式
-    double velocity[2] = {5000, 5000};       // 运动速度 (mm/s)
-    double acceleration[2] = {5000, 5000};   // 加速度 (mm/s²)
-    std::cout << "Starting circular path with " << circular_path.size() << " points" << std::endl;
+    // 机器人控制命令
+    CartesianPose servo_cpos_cmd[2];
+    servo_cpos_cmd[0] = left_center; // 左臂初始位置
+    servo_cpos_cmd[1] = right_center; // 右臂初始位置
 
-    // 4. 执行动作
-    for (const auto& target_poses : circular_path) {
-        // 发送控制命令
-        ret = robot.robot_run_multi_movl(
-            -1,             // -1表示双轴同步运动
-            move_mode,      // 运动模式
-            FALSE,          // 阻塞执行
-            target_poses.data(), // 目标位姿
-            velocity,       // 速度
-            acceleration    // 加速度
-        );
+    // 获取初始时间
+    timespec next;
+    clock_gettime(CLOCK_REALTIME, &next);
 
-        if (ret != ERR_SUCC) {
-            std::cerr << "Movement failed with error code: " << ret << std::endl;
-            break;
-        }
+    // 控制循环
+    for(int i = 0;;i++)
+    {
+        // 获取当前机器人状态
+        JointValue now_jpos[2];     
+        CartesianPose now_cpos[2];
+        robot.edg_get_stat(0, &now_jpos[0], &now_cpos[0]);  
+        robot.edg_get_stat(1, &now_jpos[1], &now_cpos[1]);
 
-        // 打印当前点信息（可选）
-        std::cout << "Executing point: "
-                  << "Left[" << target_poses[0].tran.x << ", " << target_poses[0].tran.y << ", " << target_poses[0].tran.z << "]"
-                  << " Right[" << target_poses[1].tran.x << ", " << target_poses[1].tran.y << ", " << target_poses[1].tran.z << "]" << std::endl;
+        // 轨迹计算 - 倒圆锥运动
+        const double theta = 2.0 * JK_PI * (i % 200) / 200.0; // 角度0-2π循环
+        
+        // 计算左臂末端位置 (在水平面上的圆)
+        servo_cpos_cmd[0].tran.x = left_center.tran.x + radius * cos(theta);
+        servo_cpos_cmd[0].tran.y = left_center.tran.y + radius * sin(theta);
+        servo_cpos_cmd[0].tran.z = left_center.tran.z; // 保持高度不变
+        
+        // 计算右臂末端位置
+        servo_cpos_cmd[1].tran.x = right_center.tran.x + radius * cos(theta);
+        servo_cpos_cmd[1].tran.y = right_center.tran.y + radius * sin(theta);
+        servo_cpos_cmd[1].tran.z = right_center.tran.z;
+        
+        // 计算末端姿态 (z轴指向圆锥顶点)
+        // 左臂方向向量
+        double dx_left = left_vertex.tran.x - servo_cpos_cmd[0].tran.x;
+        double dy_left = left_vertex.tran.y - servo_cpos_cmd[0].tran.y;
+        double dz_left = left_vertex.tran.z - servo_cpos_cmd[0].tran.z;
+        
+        // 右臂方向向量
+        double dx_right = right_vertex.tran.x - servo_cpos_cmd[1].tran.x;
+        double dy_right = right_vertex.tran.y - servo_cpos_cmd[1].tran.y;
+        double dz_right = right_vertex.tran.z - servo_cpos_cmd[1].tran.z;
+        
+        // 计算俯仰角(绕Y轴旋转)
+        double pitch_left = atan2(dz_left, sqrt(dx_left*dx_left + dy_left*dy_left));
+        double pitch_right = atan2(dz_right, sqrt(dx_right*dx_right + dy_right*dy_right));
+        
+        // 计算偏航角(绕Z轴旋转)
+        double yaw_left = atan2(dy_left, dx_left);
+        double yaw_right = atan2(dy_right, dx_right);
+        
+        // 设置姿态 (使用RPY表示)
+        servo_cpos_cmd[0].rpy.rx = 0; // 滚转角保持0
+        servo_cpos_cmd[0].rpy.ry = pitch_left; // 俯仰角
+        servo_cpos_cmd[0].rpy.rz = yaw_left; // 偏航角
+        
+        servo_cpos_cmd[1].rpy.rx = 0;
+        servo_cpos_cmd[1].rpy.ry = pitch_right;
+        servo_cpos_cmd[1].rpy.rz = yaw_right;
 
-        // 读取当前状态
-        JointValue output_jpos[2];
-        CartesianPose output_cpos[2];
-        robot.edg_get_stat(0, &output_jpos[0], &output_cpos[0]);
-        robot.edg_get_stat(1, &output_jpos[1], &output_cpos[1]);
-        std::cout << "Current joint positions: "
-                  << "Left[" << output_jpos[0].jVal[0] << ", " << output_jpos[0].jVal[1] << ", " << output_jpos[0].jVal[2] << ", "
-                  << output_jpos[0].jVal[3] << ", " << output_jpos[0].jVal[4] << ", " << output_jpos[0].jVal[5] << ", " << output_jpos[0].jVal[6] << "]. "
-                  << "Right[" << output_jpos[1].jVal[0] << ", " << output_jpos[1].jVal[1] << ", " << output_jpos[1].jVal[2] << ", "
-                  << output_jpos[1].jVal[3] << ", " << output_jpos[1].jVal[4] << ", " << output_jpos[1].jVal[5] << ", " << output_jpos[1].jVal[6] << "]. " 
-                  << std::endl;
-        std::cout << "Current Cartesian positions: "
-                  << "Left[" << output_cpos[0].tran.x << ", " << output_cpos[0].tran.y << ", " << output_cpos[0].tran.z << ", "
-                  << output_cpos[0].rpy.rx << ", " << output_cpos[0].rpy.ry << ", " << output_cpos[0].rpy.rz << "]. "
-                  << "Right[" << output_cpos[1].tran.x << ", " << output_cpos[1].tran.y << ", " << output_cpos[1].tran.z << ", "
-                  << output_cpos[1].rpy.rx << ", " << output_cpos[1].rpy.ry << ", " << output_cpos[1].rpy.rz << "]. "
-                  << std::endl;
+        // 发送指令
+        robot.edg_servo_p(0, &servo_cpos_cmd[0], MoveMode::ABS);
+        robot.edg_servo_p(1, &servo_cpos_cmd[1], MoveMode::ABS);
+        robot.edg_send();
 
-        // 添加短暂延时（可选）
-        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // 等待下一个周期 (1ms)
+        timespec dt;
+        dt.tv_nsec = 1000000; // 1ms = 1,000,000 ns
+        dt.tv_sec = 0;
+        next = timespec_add(next, dt);
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &next, NULL);
     }
-    
+
     std::cout << "Circular path execution completed" << std::endl;
+    robot.login_out();
     return 0;
 }

@@ -24,6 +24,9 @@ find_library(JAKA_API
     NO_DEFAULT_PATH  # 禁止搜索系统路径
 )
 
+# 添加公共源文件（仅包含timespec.cpp）
+set(COMMON_SOURCES src/timespec.cpp)
+
 # 显式声明源文件
 set(SOURCE_FILES
     src/main.cpp
@@ -35,7 +38,7 @@ set(SOURCE_FILES
 # 生成可执行文件
 foreach(source_file ${SOURCE_FILES})
     get_filename_component(executable_name ${source_file} NAME_WE)
-    add_executable(${executable_name} ${source_file})
+    add_executable(${executable_name} ${source_file} ${COMMON_SOURCES})
     
     # 链接配置
     target_include_directories(${executable_name} PUBLIC 

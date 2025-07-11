@@ -53,10 +53,8 @@ int main()
     robot.edg_send();
 
     // 机器人控制命令
-    JointValue jpos_cmd;
-    memset(&jpos_cmd,0,sizeof(jpos_cmd));
-    JointValue jpos_cmd2;
-    memset(&jpos_cmd2,0,sizeof(jpos_cmd2));
+    CartesianPose servo_cpos_cmd[2];
+    memcpy(servo_cpos_cmd,0,sizeof(servo_cpos_cmd));
 
     // 获取初始时间
     timespec next;
@@ -75,16 +73,17 @@ int main()
         robot.edg_stat_details(details);    
 
         // 计算轨迹
-        double t = (i - 0)/10000.0;
-        double kk = 15;
-        jpos_cmd.jVal[0] = sin(kk*t)*30/180.0*3.14;
-        jpos_cmd.jVal[1] = -cos(kk*t)*20 /180.0*3.14 + 20/180.0*3.14;
-        jpos_cmd.jVal[3] = -cos(kk*t)*10/180.0*3.14 + 10/180.0*3.14;
-
+        double coefficient = sin(i/1000.0);
+        double z_step = 100 * coefficient;
+        double x_step = 10 * coefficient; 
+        servo_cpos_cmd[0].tran.z = servo_cpos_cmd[0].tran.z + z_step;
+        servo_cpos_cmd[0].tran.x = servo_cpos_cmd[0].tran.x + x_step;
+        servo_cpos_cmd[1].tran.z = servo_cpos_cmd[1].tran.z + z_step;
+        servo_cpos_cmd[1].tran.x = servo_cpos_cmd[1].tran.x + x_step;
 
         // 发送指令
-        robot.edg_servo_j(0, &jpos_cmd, MoveMode::ABS);
-        robot.edg_servo_j(1, &jpos_cmd, MoveMode::ABS);
+        robot.edg_servo_p(0, &servo_cpos_cmd[0], MoveMode::ABS);
+        robot.edg_servo_p(1, &servo_cpos_cmd[1], MoveMode::ABS);
         robot.edg_send();
 
     }
