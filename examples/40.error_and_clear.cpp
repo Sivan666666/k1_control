@@ -50,7 +50,7 @@ int main()
         ret = robot.get_last_error(&code);
         if (code.code != 0)
         {
-            printf("errcode = %x, %s\n", code.code, code.message);
+            printf("errcode = %lx, %s\n", code.code, code.message);
             std::this_thread::sleep_for(std::chrono::seconds(1));
             robot.clear_error();
         }

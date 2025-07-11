@@ -176,7 +176,7 @@ int main()
 
         ErrorCode code;
         ret = robot.get_last_error(&code);
-        printf("errcode = %x, %s\n", code.code, code.message);
+        printf("errcode = %lx, %s\n", code.code, code.message);
     }
 
     robot.login_out();

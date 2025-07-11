@@ -398,20 +398,5 @@ typedef struct
 	double joint_torque[JAKA_ROBOT_MAX_JOINT];	// 各关节转矩
 }JointTorque;
 
-typedef struct
-{
-	double jpos[JAKA_ROBOT_MAX_JOINT]; ///< 7关节位置值，单位：rad
-	double jvel[JAKA_ROBOT_MAX_JOINT]; ///< 7关节速度值，单位：rad/s
-	double jtorque[JAKA_ROBOT_MAX_JOINT]; ///< 7关节力矩值，单位：Nm
-	CartesianPose cpos; ///< 末端笛卡尔空间位置 单位：mm, rad
-	CartesianPose torque; ///< 末端传感器力矩, 单位：N, Nm
-}EdgRobotStat;
-typedef struct
-{
-	int enabled;
-	int powered;
-	double pos;
-}ExtStatus;
-
 
 #endif

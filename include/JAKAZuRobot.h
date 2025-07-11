@@ -105,14 +105,66 @@ public:
 	*/
 	errno_t servo_move_enable(BOOL enable, int robindex = 0);
 
+	/**
+	 * @brief 实时得以固定周期发送关节位置指令，单位rad。如CAN手臂为8ms
+	 * @param robot_index 机器人索引号，0表示左臂，1表示右臂
+	 * @param joint_pos 关节位置指令，单位rad
+	 * @param move_mode 运动模式，ABS表示绝对运动，INCR表示相对运动
+	 * @param step_num 步数，表示发送指令的步数，默认1步。比如调用周期无法保证8ms，则可以设置为更大值，比如2，则调用周期可允许为16ms。
+	 * 				主要用于客户端实时性不好的场景，容许更大的抖动。或处理周期需要更长的情况。
+	 * @return ERR_SUCC 成功 其他失败
+	 */
 	errno_t edg_servo_j(unsigned char robot_index, const JointValue *joint_pos, MoveMode move_mode, unsigned int step_num=1);
+
+	/**
+	 * @brief 以固定周期发送笛卡尔位置指令，单位mm和rad
+	 * @param robot_index 机器人索引号，0表示左臂，1表示右臂
+	 * @param cartesian_pose 笛卡尔位置指令，单位mm和rad
+	 * @param move_mode 运动模式，ABS表示绝对运动，INCR表示相对运动
+	 * @param step_num 步数，表示发送指令的步数，默认1步。比如调用周期无法保证8ms，则可以设置为更大值，比如2，则调用周期可允许为16ms。
+	 * 				主要用于客户端实时性不好的场景，容许更大的抖动。或处理周期需要更长的情况。
+	 * @return ERR_SUCC 成功 其他失败
+	 */
 	errno_t edg_servo_p(unsigned char robot_index, const CartesianPose *cartesian_pose, MoveMode move_mode, unsigned int step_num=1);
+
+	/**
+	 * @brief 获取机器人状态，注意此接口获取的为缓存数据，刷新周期约为8ms
+	 * @param robot_index 机器人索引号，0表示左臂，1表示右臂
+	 * @param joint_pos 关节位置，单位rad
+	 * @param cartesian_pose 笛卡尔位置，单位mm和rad
+	 * @return ERR_SUCC 成功 其他失败
+	 */
 	errno_t edg_get_stat(unsigned char robot_index, JointValue *joint_pos, CartesianPose *cartesian_pose);
-	errno_t edg_get_stat(unsigned char robot_index, EdgRobotStat *robot_stat);
+
+	/**
+	 * @brief 获取机器人状态详细信息，注意此接口获取的为缓存数据，刷新周期约为8ms
+	 * @param details 状态详细信息
+	 * @return ERR_SUCC 成功 其他失败
+	 * @deprecated 该接口即将废弃，数据内容计划与edg_get_stat合并
+	 */
 	errno_t edg_stat_details(unsigned long int details[3]);
+
+	/**
+	 * @brief 获取机器人末端FREE按钮状态
+	 * @param keys 末端FREE按钮状态，0表示未按下，1表示按下。分别代表两个机器人的
+	 * @return ERR_SUCC 成功 其他失败
+	 */
 	errno_t edg_stat_free_key(bool keys[2]);
+
+	/**
+	 * @brief 周期任务中触发内部接收事件并刷新缓存
+	 * @param next 下一个状态数据的时间戳
+	 * @return ERR_SUCC 成功 其他失败
+	 * @deprecated 该接口即将废弃，可以不用在周期任务中调用
+	 */
 	errno_t edg_recv(struct timespec *next = nullptr);
-	errno_t edg_send();
+
+	/**
+	 * @brief 周期任务中触发内部发送事件。搭配edg_servo_p和edg_servo_j使用，只有调用edg_send后，才会真正发送指令。
+	 * @param cmd_index 指令索引，用于标识指令的唯一性，如果为nullptr，则内部默认自增
+	 * @return ERR_SUCC 成功 其他失败
+	 */
+	errno_t edg_send(const uint32_t *cmd_index = nullptr);
 
 	/**
 	* @brief 控制机器人进入或退出拖拽模式
@@ -397,25 +449,21 @@ public:
 	/// @param robot_id 机器人ID 接受LEFT(0) RIGHT(1) DUAL(-1) 
 	/// @param move_mode ABS(绝对运动) or INCR（相对运动）
 	/// @param is_block TRUE(阻塞运动) or FALSE(非阻塞运动)
-	/// @param joint_pos 两个机器人的位置指令， 单位弧度
+	/// @param joint_pos 两个机器人的位置指令
 	/// @param vel 两个机器人速度指令
 	/// @param acc 两个机器人的加速度指令
-	/// @param tol 两个机器人的转接半径， 单位弧度
 	/// @return 
     errno_t robot_run_multi_movj(int robot_id, const MoveMode *move_mode, BOOL is_block, const JointValue *joint_pos, const double* vel, const double* acc);
-    errno_t robot_run_multi_movj_extend(int robot_id, const MoveMode *move_mode, BOOL is_block, const JointValue *joint_pos, const double* vel, const double* acc, const double* tol);
 
 	/// @brief 多机器人同步运动指令
 	/// @param robot_id 机器人ID 接受LEFT(0) RIGHT(1) DUAL(-1) 
 	/// @param move_mode ABS(绝对运动) or INCR（相对运动）
 	/// @param is_block TRUE(阻塞运动) or FALSE(非阻塞运动)
-	/// @param end_pos 两个机器人的位置指令， 单位mm, 弧度
+	/// @param end_pos 两个机器人的位置指令
 	/// @param vel 两个机器人速度指令
 	/// @param acc 两个机器人的加速度指令
-	/// @param tol 两个机器人的转接半径, 单位 mm
 	/// @return 
     errno_t robot_run_multi_movl(int robot_id, const MoveMode *move_mode, BOOL is_block, const CartesianPose* end_pos, const double* vel, const double* acc);
-    errno_t robot_run_multi_movl_extend(int robot_id, const MoveMode *move_mode, BOOL is_block, const CartesianPose* end_pos, const double* vel, const double* acc, const double* tol);
 
 
     /// @brief 获取两个机器人的DH参数
@@ -555,20 +603,6 @@ public:
     errno_t robot_get_tool_offset(int robot_id, CartesianPose* offset);
 
     errno_t robot_get_default_base(int robot_id, CartesianPose* base_offset);
-
-    errno_t ext_power_on();
-
-    errno_t ext_power_off();
-
-    errno_t ext_enable_on();
-
-    errno_t ext_enable_off();
-
-    errno_t ext_jog_to(int slave_id, int pos, double vel, double acc);
-
-    errno_t ext_servo_home(int robot_id);
-
-    errno_t ext_get_status(int slave_id, ExtStatus&);
 
 	~JAKAZuRobot();
 
