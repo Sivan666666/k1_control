@@ -1,2 +1,4 @@
 .vscode
 /Linux/build/
+build/
+devel/

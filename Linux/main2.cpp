@@ -1,247 +1,499 @@
-#include <JAKAZuRobot.h>
-#include <cassert>
-#include <chrono>
-#include <cmath>
+#include "JAKAZuRobot.h"
 #include <iostream>
 #include <thread>
-
+#include <chrono>
+#include <stdio.h>
+#include <math.h>
+#include <string.h>
+#include <pthread.h>
+#include "timespec.h"
+#define rad2deg(x) ((x)*180.0/M_PI)
+#define deg2rad(x) ((x)*M_PI/180.0)
 #define JK_PI (3.141592653589793)
 #define deg_tp_rad 1.0 / 180.0 * JK_PI
-
-#define ASSERT_TRUE_OR_EXIT(expr, msg) \
-    do { \
-        if (!(expr)) \
-        { \
-            std::cout << (msg) << " fail:" << __LINE__ << std::endl; \
-            std::flush(std::cout); \
-            exit(EXIT_FAILURE); \
-        } \
-    } while (0)
-
-#define ASSERT_TRUE_OR_LOG(expr, msg) \
-    do { \
-        if (!(expr)) \
-        { \
-            std::cout << (msg) << " fail:" << __LINE__ << std::endl; \
-            std::flush(std::cout); \
-        } \
-    } while (0)
-    
-int main()
+int64_t edg_timespec2ns(timespec t)
 {
-    // JAKAZuRobot robot;
-    // RobotStatus robotStatus;
-    // errno_t ret;
-
-    // ret = robot.login_in("192.168.2.200");
-    // ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "login");
-    // JointValue jstep_pos[2] { { 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 }, { 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 } };
-    // JointValue jstep_neg[2] { { -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1 }, { 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1 } };
-    // JointValue start_pos[2] = { { -90 * deg_tp_rad, -75 * deg_tp_rad, 90 * deg_tp_rad, -120 * deg_tp_rad, -70 * deg_tp_rad, -90 * deg_tp_rad, 40 * deg_tp_rad},
-    //                              { 90 * deg_tp_rad, -45 * deg_tp_rad, 0, -100 * deg_tp_rad, 0, -35 * deg_tp_rad, 90 * deg_tp_rad} };  
-                                 
-                                 
-    
-    
-    // MoveMode moveop[2] = {ABS, ABS};
-    // // double vel[2] = {2, 2};
-    // // double acc[2] = {2, 2};
-    // // double tol[2] = {0, 0};
-    // // double id[2] = {0, 0};
-    // // ret = robot.robot_run_multi_movj(LEFT, moveop, TRUE, start_pos, vel, acc);
-    
-    // CartesianPose c_pos[2] { { 10, 20, 30, 0, 0, 0 }, { 20, 40, 60, 0, 0, 0 } };
-    // CartesianPose c_neg[2] { { -10, -20, -30, 0, 0, 0 }, { -20, -40, -60, 0, 0, 0 } };
-
-    // double vel[2] = {2, 2};
-    // double acc[2] = {2, 2};
-    // ret = robot.robot_run_multi_movl(-1, moveop, TRUE, c_pos, vel, acc);
-
-    JAKAZuRobot robot;
-    RobotStatus robotStatus;
-    errno_t ret;
-
-    // 1. 登录机器人
-    ret = robot.login_in("192.168.2.200"); // 替换为实际IP
-    if (ret != ERR_SUCC) {
-        std::cerr << "Login failed with error code: " << ret << std::endl;
-        return -1;
-    }
-
-    ret = robot.power_on();
-    ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "power on");
-
-    // ret = robot.disable_robot();
-
-    robot.clear_error();
-
-
-    ret = robot.enable_robot();
-    if (ret != ERR_SUCC)
+    return t.tv_sec * 1000000000 + t.tv_nsec;
+}
+void edg_sync(timespec reftime_, int64_t *sys_time_offset)
+{
+    auto reftime = edg_timespec2ns(reftime_);
+    static int64_t integral = 0;
+    int64_t cycletime = 1000000;
+    int64_t delta = (reftime - 0) % cycletime;
+    if (delta > (cycletime / 2))
     {
-        printf("enable failed! ret = %d\n", ret);
+        delta = delta - cycletime;
     }
-    ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "enable robot");
-    double mm = 1e-3;
-    // 2. 定义Fling动作路径点（笛卡尔空间坐标，单位：mm和度）
-    // 左臂路径点 (转换为mm和SDK要求的坐标系)
-    CartesianPose left_path[] = {
-        {mm*200,  mm*220, mm*100, 160, 0, 0},  // 起始点
-        {mm*200,  mm*200, mm*200, 160, 0, 0},
-        {mm*320,  mm*200, mm*220, 160, 0, 0},
-        {mm*420,  mm*200, mm*320, 160, 0, 0},
-        {mm*350,  mm*200, mm*200, 160, 0, 0},
-        {mm*300,  mm*200, mm*170, 160, 0, 0},
-        {mm*200,  mm*200, mm*100, 160, 0, 0}   // 结束点
-    };
+    if (delta > 0)
+    {
+        integral++;
+    }
+    if (delta < 0)
+    {
+        integral--;
+    }
+    if (sys_time_offset)
+    {
+        *sys_time_offset = -(delta / 100) - (integral / 20);  //类似PI调节
+    }
+}
 
-    // 右臂路径点 (Y坐标取反)
-    CartesianPose right_path[] = {
-        {mm*200,  mm*-220, mm*100, 200, 0, 0}, // 起始点
-        {mm*200,  mm*-200, mm*200, 200, 0, 0},
-        {mm*320,  mm*-200, mm*220, 200, 0, 0},
-        {mm*420,  mm*-200, mm*320, 200, 0, 0},
-        {mm*350,  mm*-200, mm*200, 200, 0, 0},
-        {mm*300,  mm*-200, mm*170, 200, 0, 0},
-        {mm*200,  mm*-200, mm*100, 200, 0, 0}  // 结束点
-    };
-
-    // 3. 运动参数设置
-    MoveMode move_mode[2] = {ABS, ABS}; // 绝对坐标模式
-    double velocity[2] = {2, 2};     // 运动速度 (mm/s)
-    double acceleration[2] = {2, 2}; // 加速度 (mm/s²)
-    int point_count = sizeof(left_path) / sizeof(CartesianPose);
+int servoj_test(JAKAZuRobot &robot)
+{
+    JointValue jpos[2];
+    memset(&jpos,0,sizeof(jpos));
     
-    // 4. 执行Fling动作
-    for (int i = 0; i < point_count; ++i) {
-        CartesianPose target_poses[2] = {left_path[i], right_path[i]};
+    double v[] = {deg2rad(30),deg2rad(30)};
+    double a[] = {deg2rad(150),deg2rad(150)};
+    MoveMode mode[]={MoveMode::ABS,MoveMode::ABS};
+    robot.robot_run_multi_movj(DUAL,mode,true,jpos,v,a);
+    robot.servo_move_use_none_filter();
+    // robot.servo_move_use_joint_LPF(125.0);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    JointValue jpos_cmd;
+    memset(&jpos_cmd,0,sizeof(jpos_cmd));
+    JointValue jpos_cmd2;
+    memset(&jpos_cmd2,0,sizeof(jpos_cmd2));
 
-        // 调用多臂笛卡尔空间运动接口
-        ret = robot.robot_run_multi_movl(
-            -1,             // -1表示双轴同步运动
-            move_mode,      // 运动模式
-            TRUE,           // 阻塞执行
-            target_poses,   // 目标位姿
-            velocity,       // 速度
-            acceleration    // 加速度
+    bool rob1_change_to_servo = false;
+    // std::thread t([&](){
+    //     JointValue jpos[2];
+    //     memset(&jpos,0,sizeof(jpos));
+    //     double v[] = {deg2rad(30),deg2rad(30)};
+    //     double a[] = {deg2rad(150),deg2rad(150)};
+    //     MoveMode mode[]={MoveMode::ABS,MoveMode::ABS};
+    //     for(int i = 0;i<1;i++)
+    //     {
+    //         jpos[1].jVal[0] = deg2rad(30);
+    //         robot.robot_run_multi_movj(RIGHT,mode,true,jpos,v,a);
+    //         std::this_thread::sleep_for(std::chrono::seconds(1));
+    //         jpos[1].jVal[0] = deg2rad(-30);
+    //         robot.robot_run_multi_movj(RIGHT,mode,true,jpos,v,a);
+    //         std::this_thread::sleep_for(std::chrono::seconds(1));
+    //     }
+    //     jpos[1].jVal[0] = deg2rad(0);
+    //     robot.robot_run_multi_movj(RIGHT,mode,true,jpos,v,a);
+    //     robot.servo_move_enable(1, 1);
+    //     rob1_change_to_servo = true;
+
+    // });
+    sched_param sch;
+    sch.sched_priority = 90;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+    robot.servo_move_enable(1, 0);
+    robot.servo_move_enable(1, 1);
+    timespec next;
+    clock_gettime(CLOCK_REALTIME, &next);
+    
+    int rob2_start_k = 0;
+    for(int i = 0;;i++)
+    {
+        timespec max_wkup_time;
+        robot.edg_recv(&next);
+        timespec cur_time;
+        timespec cc;
+        clock_gettime(CLOCK_REALTIME, &cc);
+
+        JointValue jpos[2];
+        CartesianPose cpos[2];
+        int64_t recv_time = 0;
+        robot.edg_get_stat(0, &jpos[0], &cpos[0]);
+        robot.edg_get_stat(1, &jpos[1], &cpos[1]);
+
+        EdgRobotStat rbstat[2];
+        robot.edg_get_stat(0,&rbstat[0]);
+        robot.edg_get_stat(1,&rbstat[1]);
+
+        unsigned long int details[3];
+        robot.edg_stat_details(details);
+    
+        double t = (i - 0)/10000.0;
+        double kk = 15;
+        jpos_cmd.jVal[0] = sin(kk*t)*30/180.0*3.14;
+        jpos_cmd.jVal[1] = -cos(kk*t)*20 /180.0*3.14 + 20/180.0*3.14;
+        jpos_cmd.jVal[3] = -cos(kk*t)*10/180.0*3.14 + 10/180.0*3.14;
+
+        jpos[1].jVal[0]=0;
+        jpos[1].jVal[1]=0;
+        jpos[1].jVal[2]=0;
+        jpos[1].jVal[3]=0;
+        jpos[1].jVal[4]=0;
+        jpos[1].jVal[5]=0;
+        jpos[1].jVal[6]=0;
+
+
+        robot.edg_servo_j(0, &jpos_cmd, MoveMode::ABS);
+        robot.edg_servo_j(1, &jpos_cmd, MoveMode::ABS);
+        robot.edg_send();
+        
+#if 1
+        printf("%ld %ld %ld %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %ld %ld %ld\n", 
+        //std::chrono::duration_cast<std::chrono::nanoseconds>(cur.time_since_epoch()).count(),
+        edg_timespec2ns(cc),
+        edg_timespec2ns(cur_time),
+        edg_timespec2ns(max_wkup_time),
+        jpos[0].jVal[0], jpos[0].jVal[1], jpos[0].jVal[3],
+        jpos[1].jVal[0], jpos[1].jVal[1], jpos[1].jVal[3],
+        jpos_cmd.jVal[0], jpos_cmd.jVal[1], jpos_cmd.jVal[3],
+        details[0], details[1], details[2]
         );
 
-        if (ret != ERR_SUCC) {
-            std::cerr << "Movement failed at point " << i 
-                      << " with error code: " << ret << std::endl;
-            break;
-        }
 
-        std::cout << "Executed point " << i 
-                  << ": Left[" << target_poses[0].tran.x << ", " << target_poses[0].tran.y << ", " << target_poses[0].tran.z << "]"
-                  << " Right[" << target_poses[1].tran.x << ", " << target_poses[1].tran.y << ", " << target_poses[1].tran.z << "]" << std::endl;
+        
+#endif
+        //等待下一个周期
+        printf("111");
+        timespec dt;
+        dt.tv_nsec = 1000000;
+        dt.tv_sec = 0;
+        next = timespec_add(next, dt);
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &next, NULL);
     }
+}
 
-    // PayLoad payload;
-    // robot.robot_zero_ftsensor(LEFT, 1);
-    // std::cout<<"payload.ok"<<std::endl;
-    // std::this_thread::sleep_for(std::chrono::milliseconds(5000)); //校零后必须等待 1 秒
+// void servop_test(JAKAZuRobot &robot)
+// {
+//     JointValue jpos[2];
+//     memset(&jpos,0,sizeof(jpos));
+//     jpos[0].jVal[0] = deg2rad(28);
+//     jpos[0].jVal[1] = deg2rad(33);
+//     jpos[0].jVal[2] = deg2rad(-14);
+//     jpos[0].jVal[3] = deg2rad(-55);
+//     jpos[0].jVal[4] = deg2rad(-24);
+//     jpos[0].jVal[5] = deg2rad(-53);
+//     jpos[0].jVal[6] = deg2rad(40);
+
+//     jpos[1].jVal[0] = deg2rad(-27);
+//     jpos[1].jVal[1] = deg2rad(50);
+//     jpos[1].jVal[2] = deg2rad(11);
+//     jpos[1].jVal[3] = deg2rad(-75);
+//     jpos[1].jVal[4] = deg2rad(18);
+//     jpos[1].jVal[5] = deg2rad(30);
+//     jpos[1].jVal[6] = deg2rad(25);
+ 
+//     double jv[2] = {deg2rad(10),deg2rad(10)};
+//     double ja[2] = {deg2rad(100),deg2rad(100)};
+//     MoveMode mode[]={MoveMode::ABS,MoveMode::ABS};
+//     robot.robot_run_multi_movj(DUAL,mode,true,jpos,jv,ja);
+
+//     double v[] = {10,10};
+//     double a[] = {100,100};
+//     CartesianPose cpos[2];
+//     robot.kine_forward(0,&jpos[0],&cpos[0]);
+//     robot.kine_forward(1,&jpos[1],&cpos[1]);
+//     cpos[0].tran.z += 10;
+//     cpos[1].tran.z += 10;
+//     robot.robot_run_multi_movl(DUAL,mode,true,cpos,v,a);
+//     std::this_thread::sleep_for(std::chrono::seconds(2));
+//     // 1. 定义Fling轨迹路径点（左右臂）[用户提供的轨迹数据]
+//     CartesianPose left_path[] = {
+//         {250,  220, 200, deg2rad(160), 0, 0},
+//         {320,  200, 220, deg2rad(160), 0, 0},
+//         {520,  200, 420, deg2rad(130), deg2rad(-20), deg2rad(35)},
+//         {350,  200, 200, deg2rad(160), 0, 0},
+//         {300,  200, 170, deg2rad(160), 0, 0},
+//         {200,  220, 150, deg2rad(160), 0, 0}
+//     };
+
+//     CartesianPose right_path[] = {
+//         {200,  -220, 200, deg2rad(-160), deg2rad(-15), 0},
+//         {320,  -200, 220, deg2rad(-160), deg2rad(-15), 0},
+//         {520,  -200, 420, deg2rad(-150), deg2rad(-30), deg2rad(-40)},
+//         {350,  -200, 200, deg2rad(-160), deg2rad(-15), 0},
+//         {300,  -200, 170, deg2rad(-160), deg2rad(-15), 0},
+//         {200,  -220, 150, deg2rad(-160), deg2rad(-15), 0}
+//     };
+
+//     // 2. 轨迹参数设置
+//     const int num_points = sizeof(left_path) / sizeof(left_path[0]);  // 路径点数量
+//     const int step_per_segment = 1000;  // 每段轨迹执行周期数（1秒）
+//     const int total_segments = num_points - 1;  // 总段数
+//     const int total_steps = total_segments * step_per_segment;  // 总周期数
+
+//     // 3. 设置实时优先级
+//     sched_param sch;
+//     sch.sched_priority = 90;
+//     pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+//     robot.servo_move_enable(1, 0);
+//     robot.servo_move_enable(1, 1);
     
-    // // ret = robot.robot_set_cst_ftframe(LEFT, 0); //设
-    // ret= robot.robot_get_ftsensor_payload(LEFT, 1, &payload);
-    // int status;
-    // int errcode;
-    // double ft_original;
-    // double ft_actual;
-    // ret= robot.robot_get_ftsensor_stat(LEFT, 1, &status, &
-    //     errcode, & ft_original, &ft_actual);
-    // std::cout<<"payload.mass::"<< payload.mass<<",status:"<<status<<",err:"<<errcode<<",ft_original"<<ft_original<<",ft_ac"<<ft_actual<<std::endl; 
+//     // 4. 初始化时间控制
+//     timespec next;
+//     clock_gettime(CLOCK_REALTIME, &next);
     
-    // DHParam dh[2] = {};
-    // ret = robot.robot_get_multi_robot_dh(dh);
-    // for (int i = 0; i < 2; i++)
-    // {
-    //     printf("Robot[%d] : Alpha, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].alpha[0], dh[i].alpha[1], dh[i].alpha[2], dh[i].alpha[3], dh[i].alpha[4], dh[i].alpha[5], dh[i].alpha[6]);
-    //     printf("Robot[%d] : d, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].d[0], dh[i].d[1], dh[i].d[2], dh[i].d[3], dh[i].d[4], dh[i].d[5], dh[i].d[6]);
-    //     printf("Robot[%d] : a, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].a[0], dh[i].a[1], dh[i].a[2], dh[i].a[3], dh[i].a[4], dh[i].a[5], dh[i].a[6]);
-    //     printf("Robot[%d] : joint_homeoff, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].joint_homeoff[0], dh[i].joint_homeoff[1], dh[i].joint_homeoff[2], dh[i].joint_homeoff[3], dh[i].joint_homeoff[4], dh[i].joint_homeoff[5], dh[i].joint_homeoff[6]);
-    // }
-
-    // CartesianPose base_offset[2] = {};
-    // ret = robot.robot_get_default_base(LEFT, base_offset);
-    // if (ret == ERR_SUCC)
-    // {
-    //     printf("Left base offset: %lf, %lf, %lf\n", base_offset[0].tran.x, base_offset[0].tran.y, base_offset[0].tran.z);
-    // }
-    // ret = robot.robot_get_default_base(RIGHT, base_offset + 1);
-    // if (ret == ERR_SUCC)    {
-    //     printf("Right base offset: %lf, %lf, %lf\n", base_offset[1].tran.x, base_offset[1].tran.y, base_offset[1].tran.z);
-    // }
-    // CartesianPose pos[2];
-    // robot.kine_forward(LEFT, &start_pos[0], &pos[0]);
-    // // robot.kine_forward(RIGHT, &start_pos[1], &pos[1]);
-    // printf("left pos = %lf, %lf, %lf, %lf, %lf, %lf\n", pos[0].tran.x, pos[0].tran.y, pos[0].tran.z, pos[0].rpy.rx, pos[0].rpy.ry, pos[0].rpy.rz);
-
+//     // 5. 主控制循环
+//     for(int i = 0; ; i++)
+//     {
+//         robot.edg_recv(&next);
+        
+//         // 6. 轨迹插值计算
+//         int current_step = i % total_steps;  // 循环执行轨迹
+//         int segment_index = current_step / step_per_segment;
+//         int step_in_segment = current_step % step_per_segment;
+//         double ratio = static_cast<double>(step_in_segment) / step_per_segment;
+        
+//         // 7. 左右臂位置插值
+//         CartesianPose* left_start = &left_path[segment_index];
+//         CartesianPose* left_end = &left_path[segment_index + 1];
+//         CartesianPose* right_start = &right_path[segment_index];
+//         CartesianPose* right_end = &right_path[segment_index + 1];
+        
+//         // 8. 计算当前目标位置（线性插值）
+//         CartesianPose target_left, target_right;
+        
+//         // 左臂插值
+//         target_left.tran.x = left_start->tran.x + (left_end->tran.x - left_start->tran.x) * ratio;
+//         target_left.tran.y = left_start->tran.y + (left_end->tran.y - left_start->tran.y) * ratio;
+//         target_left.tran.z = left_start->tran.z + (left_end->tran.z - left_start->tran.z) * ratio;
+//         target_left.rpy.rx = left_start->rpy.rx + (left_end->rpy.rx - left_start->rpy.rx) * ratio;
+//         target_left.rpy.ry = left_start->rpy.ry + (left_end->rpy.ry - left_start->rpy.ry) * ratio;
+//         target_left.rpy.rz = left_start->rpy.rz + (left_end->rpy.rz - left_start->rpy.rz) * ratio;
+        
+//         // 右臂插值
+//         target_right.tran.x = right_start->tran.x + (right_end->tran.x - right_start->tran.x) * ratio;
+//         target_right.tran.y = right_start->tran.y + (right_end->tran.y - right_start->tran.y) * ratio;
+//         target_right.tran.z = right_start->tran.z + (right_end->tran.z - right_start->tran.z) * ratio;
+//         target_right.rpy.rx = right_start->rpy.rx + (right_end->rpy.rx - right_start->rpy.rx) * ratio;
+//         target_right.rpy.ry = right_start->rpy.ry + (right_end->rpy.ry - right_start->rpy.ry) * ratio;
+//         target_right.rpy.rz = right_start->rpy.rz + (right_end->rpy.rz - right_start->rpy.rz) * ratio;
+        
+//         // 9. 发送控制指令
+//         robot.edg_servo_p(0, &target_left, MoveMode::ABS);
+//         robot.edg_servo_p(1, &target_right, MoveMode::ABS);
+//         robot.edg_send();
+        
+//         // 10. 调试输出
+//         CartesianPose actcpos;
+//         robot.edg_get_stat(0, nullptr, &actcpos);
+//         printf("Target: (%.1f, %.1f, %.1f) Actual: (%.1f, %.1f, %.1f)\n",
+//                target_left.tran.x, target_left.tran.y, target_left.tran.z,
+//                actcpos.tran.x, actcpos.tran.y, actcpos.tran.z);
+        
+//         // 11. 时间控制（1ms周期）
+//         timespec dt = {0, 1000000};  // 1ms
+//         next = timespec_add(next, dt);
+//         clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &next, nullptr);
+//     }
     
+//     // 12. 退出时关闭伺服（虽然实际不会执行到这里）
+//     robot.servo_move_enable(0, 0);
+//     robot.servo_move_enable(0, 1);
+// }
 
-    //printf("right pos = %lf, %lf, %lf, %lf, %lf, %lf\n", pos[1].tran.x, pos[1].tran.y, pos[1].tran.z, pos[1].rpy.rx, pos[1].rpy.ry, pos[1].rpy.rz);
-    // for (int i = 0; i < 5; i++)
-    // {
-    //     MoveMode moveop[2] = {INCR, INCR};
-    //     double vel[2] = {1, 1};
-    //     double acc[2] = {1, 1};
-    //     double tol[2] = {5, 5};
-    //     double id[2] = {0, 0};
-    //     ret = robot.robot_run_multi_movj_extend(LEFT, moveop, FALSE, jstep_pos, vel, acc, tol);
-    //     if (ret != ERR_SUCC)
-    //     {
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    //         std::cout << "joint_move pos failed. ret = " << ret << std::endl;
-    //     }
-    //     else
-    //     {
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    //         std::cout << "joint_move pos ok.\n";
-    //     }
+void servop_test(JAKAZuRobot &robot)
+{
+    JointValue jpos[2];
+    memset(&jpos,0,sizeof(jpos));
+    jpos[0].jVal[0] = deg2rad(28);
+    jpos[0].jVal[1] = deg2rad(33);
+    jpos[0].jVal[2] = deg2rad(-14);
+    jpos[0].jVal[3] = deg2rad(-55);
+    jpos[0].jVal[4] = deg2rad(-24);
+    jpos[0].jVal[5] = deg2rad(-53);
+    jpos[0].jVal[6] = deg2rad(40);
 
-    //     // ret = robot.robot_run_multi_movj_extend(LEFT, moveop, FALSE, jstep_neg, vel, acc, tol);
-    //     // if (ret == ERR_SUCC)
-    //     // {
-    //     //     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    //     //     std::cout << "joint_move neg ok.\n";
-    //     // }
-    //     // else
-    //     // {
-    //     //     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    //     //     std::cout << "joint_move neg failed. ret = " << ret << std::endl;
-    //     // }
-    // }
-    // JointValue end_pos[2];
-    // pos[0].tran.x += 20;
-    // pos[0].tran.y += 20;
-    // pos[0].tran.z += 20;
-    // pos[1].tran.x += 20;
-    // pos[1].tran.y += 20;
-    // pos[1].tran.z += 20;
-    // robot.kine_inverse(LEFT, &start_pos[0], &pos[0], &end_pos[0]);
-    // robot.kine_inverse(RIGHT, &start_pos[1], &pos[1], &end_pos[1]);
+    jpos[1].jVal[0] = deg2rad(-27);
+    jpos[1].jVal[1] = deg2rad(50);
+    jpos[1].jVal[2] = deg2rad(11);
+    jpos[1].jVal[3] = deg2rad(-75);
+    jpos[1].jVal[4] = deg2rad(18);
+    jpos[1].jVal[5] = deg2rad(30);
+    jpos[1].jVal[6] = deg2rad(25);
+ 
+    double jv[2] = {deg2rad(10),deg2rad(10)};
+    double ja[2] = {deg2rad(100),deg2rad(100)};
+    MoveMode mode[]={MoveMode::ABS,MoveMode::ABS};
+    robot.robot_run_multi_movj(DUAL,mode,true,jpos,jv,ja);
 
-    // printf("left end pos = %lf, %lf, %lf, %lf, %lf, %lf\n", end_pos[0].jVal[0], end_pos[0].jVal[1], end_pos[0].jVal[2], end_pos[0].jVal[3], end_pos[0].jVal[4], end_pos[0].jVal[5], end_pos[0].jVal[6]);
-    // printf("right end pos = %lf, %lf, %lf, %lf, %lf, %lf\n", end_pos[1].jVal[0], end_pos[1].jVal[1], end_pos[1].jVal[2], end_pos[1].jVal[3], end_pos[1].jVal[4], end_pos[1].jVal[5], end_pos[0].jVal[6]);
-
-    // robot.kine_forward(LEFT, &end_pos[0], &pos[0]);
-    // robot.kine_forward(RIGHT, &end_pos[1], &pos[1]);
-    // printf("left pos = %lf, %lf, %lf, %lf, %lf, %lf\n", pos[0].tran.x, pos[0].tran.y, pos[0].tran.z, pos[0].rpy.rx, pos[0].rpy.ry, pos[0].rpy.rz);
-    // printf("right pos = %lf, %lf, %lf, %lf, %lf, %lf\n", pos[1].tran.x, pos[1].tran.y, pos[1].tran.z, pos[1].rpy.rx, pos[1].rpy.ry, pos[1].rpy.rz);
-
-    // ret = robot.login_in("127.0.0.1");
-    // ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "login");
-
-    // DHParam dh[2] = {};
-    // ret = robot.robot_get_multi_robot_dh(dh);
-    // for (int i = 0; i < 2; i++)
-    // {
-    //     printf("Robot[%d] : Alpha, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].alpha[0], dh[i].alpha[1], dh[i].alpha[2], dh[i].alpha[3], dh[i].alpha[4], dh[i].alpha[5], dh[i].alpha[6]);
-    //     printf("Robot[%d] : d, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].d[0], dh[i].d[1], dh[i].d[2], dh[i].d[3], dh[i].d[4], dh[i].d[5], dh[i].d[6]);
-    //     printf("Robot[%d] : a, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].a[0], dh[i].a[1], dh[i].a[2], dh[i].a[3], dh[i].a[4], dh[i].a[5], dh[i].a[6]);
-    //     printf("Robot[%d] : joint_homeoff, %lf, %lf, %lf, %lf, %lf, %lf, %lf\n", i, dh[i].joint_homeoff[0], dh[i].joint_homeoff[1], dh[i].joint_homeoff[2], dh[i].joint_homeoff[3], dh[i].joint_homeoff[4], dh[i].joint_homeoff[5], dh[i].joint_homeoff[6]);
-    // }
+    double v[] = {10,10};
+    double a[] = {100,100};
+    CartesianPose cpos[2];
+    robot.kine_forward(0,&jpos[0],&cpos[0]);
+    robot.kine_forward(1,&jpos[1],&cpos[1]);
+    cpos[0].tran.z += 10;
+    cpos[1].tran.z += 10;
+    robot.robot_run_multi_movl(DUAL,mode,true,cpos,v,a);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
     
-    std::cout << "hello world" << std::endl;
+    sched_param sch;
+    sch.sched_priority = 90;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+    robot.servo_move_enable(1, 0);
+    robot.servo_move_enable(1, 1);
+    timespec next;
+    clock_gettime(CLOCK_REALTIME, &next);
+    CartesianPose servo_cpos[2];
+    memcpy(servo_cpos,cpos,sizeof(servo_cpos));
+    for(int i=0;;i++)
+    {
+        robot.edg_recv(&next);
+
+        JointValue actjpos;
+        CartesianPose actcpos;
+        robot.edg_get_stat(0, &actjpos, &actcpos);
+        robot.edg_get_stat(1, &actjpos, &actcpos);
+
+        double coefficient = sin(i/1000.0);
+        double z_step = 100 * coefficient;
+        double x_step = 10 * coefficient;  
+        double ori_step = deg2rad(10) * coefficient;
+  
+        servo_cpos[0].tran.z = cpos[0].tran.z;
+        servo_cpos[0].tran.x = cpos[0].tran.x;
+        servo_cpos[1].tran.z = cpos[1].tran.z;
+        servo_cpos[1].tran.x = cpos[1].tran.x;
+
+        servo_cpos[0].tran.z = cpos[0].tran.z + z_step;
+        servo_cpos[0].tran.x = cpos[0].tran.x + x_step;
+        servo_cpos[1].tran.z = cpos[1].tran.z + z_step;
+        servo_cpos[1].tran.x = cpos[1].tran.x + x_step;
+
+        CartesianPose left_path[] = {  // 起始点
+            {200,  220, 200, deg_tp_rad * 160, 0, 0},
+            {320,  200, 220, deg_tp_rad * 160, 0, 0},
+            {520,  200, 420, deg_tp_rad * 130, deg_tp_rad * -20, deg_tp_rad * 35},
+            {350,  200, 200, deg_tp_rad * 160, 0, 0},
+            {300,  200, 170, deg_tp_rad * 160, 0, 0},
+            {200,  220, 150, deg_tp_rad * 160, 0, 0}   // 结束点
+        };
+    
+        // 右臂路径点 (Y坐标取反)
+        CartesianPose right_path[] = {// 起始点
+            {49,  -756, 314, deg_tp_rad * 93 , deg_tp_rad * -22, },
+            {320,  -200, 220, deg_tp_rad * -160 , deg_tp_rad * -15, 0},
+            {520,  -200, 420, deg_tp_rad * -150 , deg_tp_rad * -30, deg_tp_rad * -40},
+            {350,  -200, 200, deg_tp_rad * -160 , deg_tp_rad * -15, 0},
+            {300,  -200, 170, deg_tp_rad * -160 , deg_tp_rad * -15, 0},
+            {200,  -220, 150, deg_tp_rad * -160 , deg_tp_rad * -15, 0}  // 结束点
+        };
+        robot.edg_servo_p(0,&servo_cpos[0],MoveMode::ABS);
+        robot.edg_servo_p(1,&servo_cpos[1],MoveMode::ABS);
+        robot.edg_send();
+        printf("%0.4f %0.4f %0.4f %0.4f %0.4f %0.4f\n", actcpos.tran.x, actcpos.tran.y, actcpos.tran.z, actcpos.rpy.rx, actcpos.rpy.ry, actcpos.rpy.rz);
+
+
+        //等待下一个周期
+        timespec dt;
+        dt.tv_nsec = 1000000;
+        dt.tv_sec = 0;
+        next = timespec_add(next, dt);
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &next, NULL);
+    }
+    robot.servo_move_enable(0, 0);
+    robot.servo_move_enable(0, 1);
+}
+
+int main()
+{
+    //
+    JAKAZuRobot robot;
+
+    robot.login_in("192.168.2.200");
+    // robot.login_in("192.168.2.9");
+    robot.clear_error();
+    robot.servo_move_enable(0, -1); //关闭所有机器人的伺服模式
+    robot.servo_move_use_none_filter();
+    robot.power_on();
+    robot.enable_robot();
+    robot.motion_abort();
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    
+    // servoj_test(robot);
+    servop_test(robot);
+
+    // JointValue jpos[2];
+    // memset(&jpos,0,sizeof(jpos));
+    // jpos[0].jVal[0] = deg2rad(28);
+    // jpos[0].jVal[1] = deg2rad(33);
+    // jpos[0].jVal[2] = deg2rad(-14);
+    // jpos[0].jVal[3] = deg2rad(-55);
+    // jpos[0].jVal[4] = deg2rad(-24);
+    // jpos[0].jVal[5] = deg2rad(-53);
+    // jpos[0].jVal[6] = deg2rad(40);
+
+    // jpos[1].jVal[0] = deg2rad(-27);
+    // jpos[1].jVal[1] = deg2rad(50);
+    // jpos[1].jVal[2] = deg2rad(11);
+    // jpos[1].jVal[3] = deg2rad(-75);
+    // jpos[1].jVal[4] = deg2rad(18);
+    // jpos[1].jVal[5] = deg2rad(30);
+    // jpos[1].jVal[6] = deg2rad(25);
+ 
+    // double jv[2] = {deg2rad(10),deg2rad(10)};
+    // double ja[2] = {deg2rad(100),deg2rad(100)};
+    // MoveMode mode[]={MoveMode::ABS,MoveMode::ABS};
+    // robot.robot_run_multi_movj(DUAL,mode,true,jpos,jv,ja);
+
+    // double v[] = {10,10};
+    // double a[] = {100,100};
+    // CartesianPose cpos[2];
+    // robot.kine_forward(0,&jpos[0],&cpos[0]);
+    // robot.kine_forward(1,&jpos[1],&cpos[1]);
+    // cpos[0].tran.z += 10;
+    // cpos[1].tran.z += 10;
+    // robot.robot_run_multi_movl(DUAL,mode,true,cpos,v,a);
+    // std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // sched_param sch;
+    // sch.sched_priority = 90;
+    // pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+    // robot.servo_move_enable(1, 0);
+    // robot.servo_move_enable(1, 1);
+    // timespec next;
+    // clock_gettime(CLOCK_REALTIME, &next);
+    // CartesianPose servo_cpos[2];
+    // memcpy(servo_cpos,cpos,sizeof(servo_cpos));
+    // for(int i=0;;i++)
+    // {
+    //     robot.edg_recv(&next);
+
+    //     JointValue actjpos;
+    //     CartesianPose actcpos;
+    //     robot.edg_get_stat(0, &actjpos, &actcpos);
+    //     robot.edg_get_stat(1, &actjpos, &actcpos);
+
+    //     printf("%0.4f %0.4f %0.4f %0.4f %0.4f %0.4f\n", actcpos.tran.x, actcpos.tran.y, actcpos.tran.z, actcpos.rpy.rx, actcpos.rpy.ry, actcpos.rpy.rz);
+    //     printf("%0.4f %0.4f %0.4f %0.4f %0.4f %0.4f\n", servo_cpos[0].tran.x, servo_cpos[0].tran.y, servo_cpos[0].tran.z, servo_cpos[0].rpy.rx, servo_cpos[0].rpy.ry, servo_cpos[0].rpy.rz);
+
+    //     //printf("%0.4f %0.4f %0.4f %0.4f %0.4f %0.4f\n", actcpos.tran.x, actcpos.tran.y, actcpos.tran.z, actcpos.rpy.rx, actcpos.rpy.ry, actcpos.rpy.rz);
+    //     //printf("%0.4f %0.4f %0.4f %0.4f %0.4f %0.4f\n", servo_cpos[1].tran.x, servo_cpos[1].tran.y, servo_cpos[1].tran.z, servo_cpos[1].rpy.rx, servo_cpos[1].rpy.ry, servo_cpos[1].rpy.rz);
+
+    //     double coefficient = sin(i/1000.0);
+    //     double z_step = 100 * coefficient;
+    //     double x_step = 10 * coefficient;  
+    //     double ori_step = deg2rad(10) * coefficient;
+  
+    //     servo_cpos[0].tran.z = cpos[0].tran.z;
+    //     servo_cpos[0].tran.x = cpos[0].tran.x;
+    //     servo_cpos[1].tran.z = cpos[1].tran.z;
+    //     servo_cpos[1].tran.x = cpos[1].tran.x;
+
+    //     servo_cpos[0].tran.z = 300;
+    //     servo_cpos[0].tran.x = cpos[0].tran.x + x_step;
+    //     servo_cpos[1].tran.z = cpos[1].tran.z + z_step;
+    //     servo_cpos[1].tran.x = cpos[1].tran.x + x_step;
+
+    //     actcpos.rpy.rx = deg2rad(actcpos.rpy.rx);
+    //     actcpos.rpy.ry = deg2rad(actcpos.rpy.ry);
+    //     actcpos.rpy.rz = deg2rad(actcpos.rpy.rz);
+
+    //     robot.edg_servo_p(0,&servo_cpos[0],MoveMode::ABS);
+    //     robot.edg_servo_p(1,&actcpos,MoveMode::ABS);
+    //     robot.edg_send();
+        
+
+    //     //等待下一个周期
+    //     timespec dt;
+    //     dt.tv_nsec = 1000000;
+    //     dt.tv_sec = 0;
+    //     next = timespec_add(next, dt);
+    //     clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &next, NULL);
+    // }
+    // robot.servo_move_enable(0, 0);
+    // robot.servo_move_enable(0, 1);
+    
+    robot.login_out();
     return 0;
 }

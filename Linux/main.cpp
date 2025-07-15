@@ -60,7 +60,7 @@ int main()
     JAKAZuRobot robot;
     RobotStatus robotStatus;
     errno_t ret;
-
+    int* arrive = 0;
     // 1. 登录机器人
     ret = robot.login_in("192.168.2.200"); // 替换为实际IP
     if (ret != ERR_SUCC) {
@@ -110,36 +110,43 @@ int main()
     double acceleration[2] = {3000, 3000}; // 加速度 (mm/s²)
     int point_count = sizeof(left_path) / sizeof(CartesianPose);
     
-    //ret = robot.robot_run_multi_movj(LEFT, moveop, TRUE, start_pos, vel, acc);
+    ret = robot.robot_run_multi_movj(RIGHT, moveop, TRUE, start_pos, vel, acc);
 
-
+    // ret = robot.servo_move_enable(1, 0);
+    // std::cout << ret << std::endl; 
+    // ret = robot.servo_move_enable(1, 1);
+    // std::cout << ret << std::endl; 
     // 4. 执行Fling动作
     for (int i = 0; i < point_count; ++i) {
         CartesianPose target_poses[2] = {left_path[i], right_path[i]};
+        velocity[0] = 2000;     // 运动速度 (mm/s)
+        velocity[1] = 2000; 
+        acceleration[0] = 2000; // 加速度 (mm/s²)
+        acceleration[1] = 2000;
         
-        if(i==2 || i==3)
-        {
-            velocity[0] = 5000;     // 运动速度 (mm/s)
-            velocity[1] = 5000; 
-            acceleration[0] = 5000; // 加速度 (mm/s²)
-            acceleration[1] = 5000;
-        }
-        else
-        {
-            velocity[0] = 1000;     // 运动速度 (mm/s)
-            velocity[1] = 1000; 
-            acceleration[0] = 1000; // 加速度 (mm/s²)
-            acceleration[1] = 1000;
-        }
-        // 调用多臂笛卡尔空间运动接口
+        //调用多臂笛卡尔空间运动接口
         ret = robot.robot_run_multi_movl(
-            -1,             // -1表示双轴同步运动
+            DUAL,             // -1表示双轴同步运动
             move_mode,      // 运动模式
-            TRUE,           // 阻塞执行
+            FALSE,           // 阻塞执行
             target_poses,   // 目标位姿
             velocity,       // 速度
             acceleration    // 加速度
         );
+        //ret = robot.edg_servo_p(1,&right_path[i],ABS,10);
+        // robot.edg_send();
+        // std::cout << robot.robot_is_inpos(arrive) ;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (ret != ERR_SUCC)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::cout << "joint_move pos failed. ret = " << ret << std::endl;
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::cout << "joint_move pos ok.\n";
+        }
 
         if (ret != ERR_SUCC) {
             std::cerr << "Movement failed at point " << i 
@@ -150,8 +157,49 @@ int main()
         std::cout << "Executed point " << i 
                   << ": Left[" << target_poses[0].tran.x << ", " << target_poses[0].tran.y << ", " << target_poses[0].tran.z << "]"
                   << " Right[" << target_poses[1].tran.x << ", " << target_poses[1].tran.y << ", " << target_poses[1].tran.z << "]" << std::endl;
+        
+        // JointValue jpos[2];
+        // CartesianPose cpos[2];
+        // int64_t recv_time = 0;
+        // robot.edg_get_stat(0, &jpos[0], &cpos[0]);
+        // robot.edg_get_stat(1, &jpos[1], &cpos[1]);
+    
+        // // 打印左臂数据
+        // std::cout << "=== 左臂状态 ===" << std::endl;
+        // std::cout << "关节角度 (rad): ";
+        // for(int i = 0; i < JAKA_ROBOT_MAX_JOINT; i++) {
+        //     std::cout << "j" << i + 1 << ": " << jpos[0].jVal[i] << "  ";
+        // }
+        // std::cout << "\n末端位置 (m): "
+        //         << "X: " << cpos[0].tran.x
+        //         << "  Y: " << cpos[0].tran.y
+        //         << "  Z: " << cpos[0].tran.z;
+        // std::cout << "\n末端姿态 (rad): "
+        //         << "RX: " << cpos[0].rpy.rx
+        //         << "  RY: " << cpos[0].rpy.ry
+        //         << "  RZ: " << cpos[0].rpy.rz << "\n\n";
+        
+        // // 打印右臂数据
+        // std::cout << "=== 右臂状态 ===" << std::endl;
+        // std::cout << "关节角度 (rad): ";
+        // for(int i = 0; i < JAKA_ROBOT_MAX_JOINT; i++) {
+        //     std::cout << "j" << i + 1 << ": " << jpos[1].jVal[i] << "  ";
+        // }
+        // std::cout << "\n末端位置 (m): "
+        //         << "X: " << cpos[1].tran.x
+        //         << "  Y: " << cpos[1].tran.y
+        //         << "  Z: " << cpos[1].tran.z;
+        // std::cout << "\n末端姿态 (rad): "
+        //         << "RX: " << cpos[1].rpy.rx
+        //         << "  RY: " << cpos[1].rpy.ry
+        //         << "  RZ: " << cpos[1].rpy.rz << std::endl;
+    
     }
-
+    
+    
+    // edg_get_stat()
+    // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    // std::cout << jpos[0].jVal << cpos[0].tran << std::endl;
     // PayLoad payload;
     // robot.robot_zero_ftsensor(LEFT, 1);
     // std::cout<<"payload.ok"<<std::endl;

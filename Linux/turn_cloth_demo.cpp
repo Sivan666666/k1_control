@@ -81,12 +81,12 @@ int main()
     ASSERT_TRUE_OR_EXIT(ret == ERR_SUCC, "enable robot");
     
     // 2. 设置圆形路径参数
-    double radius = 30.0;       // 圆半径（mm）
+    double radius = 50.0;       // 圆半径（mm）
     double step_angle = 10.0;   // 步长角度（度）
     int cycles = 4;             // 循环次数
 
     // 左右臂中心点
-    CartesianPose left_center = {190, 490, 425, 0, 0, 0};
+    CartesianPose left_center = {160, 620, 350, 0, 0, 0};
     CartesianPose right_center = {195, -520, 390, 0, 0, 0};
 
     // 生成圆形路径
@@ -94,8 +94,8 @@ int main()
 
     // 3. 运动参数设置
     MoveMode move_mode[2] = {ABS, ABS};      // 绝对坐标模式
-    double velocity[2] = {5000, 5000};       // 运动速度 (mm/s)
-    double acceleration[2] = {5000, 5000};   // 加速度 (mm/s²)
+    double velocity[2] = {2000, 2000};       // 运动速度 (mm/s)
+    double acceleration[2] = {2000, 2000};   // 加速度 (mm/s²)
     std::cout << "Starting circular path with " << circular_path.size() << " points" << std::endl;
 
     // 4. 执行动作
@@ -120,9 +120,10 @@ int main()
                   << " Right[" << target_poses[1].tran.x << ", " << target_poses[1].tran.y << ", " << target_poses[1].tran.z << "]" << std::endl;
         
         // 添加短暂延时（可选）
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    
     std::cout << "Circular path execution completed" << std::endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+   
     return 0;
 }

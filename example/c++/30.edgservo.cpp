@@ -116,7 +116,7 @@ int servoj_test(JAKAZuRobot &robot)
         robot.edg_servo_j(1, &jpos_cmd, MoveMode::ABS);
         robot.edg_send();
         
-#if 1
+#if 0
         printf("%ld %ld %ld %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %ld %ld %ld\n", 
         //std::chrono::duration_cast<std::chrono::nanoseconds>(cur.time_since_epoch()).count(),
         edg_timespec2ns(cc),
@@ -132,6 +132,7 @@ int servoj_test(JAKAZuRobot &robot)
         
 #endif
         //等待下一个周期
+        // printf("111");
         timespec dt;
         dt.tv_nsec = 1000000;
         dt.tv_sec = 0;

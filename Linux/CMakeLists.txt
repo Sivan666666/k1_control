@@ -21,11 +21,16 @@ target_include_directories(demo PUBLIC ${SDK_INCLUDE_DIR})
 target_link_libraries(demo ${COMMON_LIBS})
 
 # 创建第二个可执行文件
-add_executable(move_fling main2.cpp)
+add_executable(move_fling main2.cpp common.h timespec.cpp common.cpp)
 target_include_directories(move_fling PUBLIC ${SDK_INCLUDE_DIR})
 target_link_libraries(move_fling ${COMMON_LIBS})
 
-# 创建第一个可执行文件
+# 创建一个可执行文件
 add_executable(turn_cloth_demo turn_cloth_demo.cpp)
 target_include_directories(turn_cloth_demo PUBLIC ${SDK_INCLUDE_DIR})
 target_link_libraries(turn_cloth_demo ${COMMON_LIBS})
+
+# 创建一个可执行文件
+add_executable(test test.cpp common.h timespec.cpp common.cpp)
+target_include_directories(test PUBLIC ${SDK_INCLUDE_DIR})
+target_link_libraries(test ${COMMON_LIBS})
