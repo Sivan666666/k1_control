@@ -2,3 +2,4 @@
 /Linux/build/
 build/
 devel/
+.cache/
