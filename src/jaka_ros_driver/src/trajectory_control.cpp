@@ -37,14 +37,6 @@ ros::Publisher left_arm_cpos_pub;
 ros::Publisher right_arm_jpos_pub;
 ros::Publisher right_arm_cpos_pub;
 ros::Publisher left_end_joint_pub;
-ros::Publisher joint_states_pub;
-
-const std::vector<std::string> ALL_JOINT_NAMES = {
-    "right_arm_joint1", "right_arm_joint2", "right_arm_joint3", "right_arm_joint4", "right_arm_joint5", "right_arm_joint6", "right_arm_joint7",
-    "right_gripper_joint1", "right_gripper_joint2",
-    "left_arm_joint1", "left_arm_joint2", "left_arm_joint3", "left_arm_joint4", "left_arm_joint5", "left_arm_joint6", "left_arm_joint7",
-    "left_gripper_joint1", "left_gripper_joint2"
-};
 
 // 左臂回调函数
 void leftArmCallback(const trajectory_msgs::JointTrajectory::ConstPtr& msg) {
@@ -120,31 +112,6 @@ void controlTimerCallback(const ros::TimerEvent& event) {
     //     state_jpos[1].jVal[3], state_jpos[1].jVal[4], state_jpos[1].jVal[5],state_jpos[1].jVal[6]
     //     );
 
-    ros::Time now = ros::Time::now();
-
-    // 2.创建并填充统一的 /joint_states 消息
-    sensor_msgs::JointState unified_joint_state_msg;
-    unified_joint_state_msg.header.stamp = now;
-    unified_joint_state_msg.name = ALL_JOINT_NAMES;
-    unified_joint_state_msg.position.reserve(18);
-    unified_joint_state_msg.position.insert(unified_joint_state_msg.position.end(), state_jpos[1].jVal, state_jpos[1].jVal + 7); // 右臂
-    // unified_joint_state_msg.position.push_back(0.0); // 右夹爪 joint 1
-    // unified_joint_state_msg.position.push_back(0.0); // 右夹爪 joint 2
-    
-    unified_joint_state_msg.position.insert(unified_joint_state_msg.position.end(), state_jpos[0].jVal, state_jpos[0].jVal + 7); // 左臂
-    // unified_joint_state_msg.position.push_back(0.0); // 左夹爪 joint 1
-    // unified_joint_state_msg.position.push_back(0.0); // 左夹爪 joint 2
-    
-    // 如果你的JAKA SDK `edg_get_stat` 不返回夹爪状态，可以先用0.0占位
-    // 确保 `position` 数组的大小与 `name` 数组的大小 (18) 一致
-    // 假设夹爪占位
-    unified_joint_state_msg.position.insert(unified_joint_state_msg.position.begin() + 7, 2, 0.0); // 在右臂后插入2个0
-    unified_joint_state_msg.position.insert(unified_joint_state_msg.position.end(), 2, 0.0);     // 在左臂后插入2个0
-
-    // 发布这个统一的消息
-    joint_states_pub.publish(unified_joint_state_msg);
-
-    
     // 创建并发布左臂关节状态消息
     sensor_msgs::JointState left_jpos_msg;
     left_jpos_msg.header.stamp = ros::Time::now();
@@ -159,7 +126,14 @@ void controlTimerCallback(const ros::TimerEvent& event) {
     left_cpos_msg.pose.position.x = state_cpos[0].tran.x;
     left_cpos_msg.pose.position.y = state_cpos[0].tran.y;
     left_cpos_msg.pose.position.z = state_cpos[0].tran.z;
+
+    geometry_msgs::PoseStamped left_end_pos_msg;
+    left_end_pos_msg.header.stamp = ros::Time::now();
+    left_end_pos_msg.header.frame_id = "base_link";
+    left_end_pos_msg.pose.position.x = state_jpos[0].jVal[6];
+    left_end_joint_pub.publish(left_end_pos_msg);
     
+
     
     // 将RPY转换为四元数
     tf2::Quaternion quat;
@@ -302,8 +276,6 @@ int main(int argc, char** argv) {
     right_arm_jpos_pub = nh.advertise<sensor_msgs::JointState>("/right_arm/jpos", 10);
     right_arm_cpos_pub = nh.advertise<geometry_msgs::PoseStamped>("/right_arm/cpos", 10);
     left_end_joint_pub = nh.advertise<geometry_msgs::PoseStamped>("/left/end_joint_feedback",10);
-    joint_states_pub = nh.advertise<sensor_msgs::JointState>("/joint_states", 10);
-
     // 创建8ms定时器
     ros::Timer control_timer = nh.createTimer(ros::Duration(0.008), controlTimerCallback);
     // 直接进入ROS事件循环（不再需要手动循环）

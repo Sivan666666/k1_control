@@ -1,0 +1,20 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/hwk/ros_ws/k1_ros/devel/lib/python3/dist-packages",
+        "/home/hwk/ros_ws/camera_ros/devel/lib/python3/dist-packages",
+        "/home/hwk/ros_ws/piper_ros/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/hwk/ros_ws/k1_ros/devel/lib/python3/dist-packages",
+        "/home/hwk/ros_ws/camera_ros/devel/lib/python3/dist-packages",
+        "/home/hwk/ros_ws/piper_ros/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build"
+    ],
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000
+}
