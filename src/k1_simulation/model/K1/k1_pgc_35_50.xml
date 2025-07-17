@@ -1,0 +1,200 @@
+<mujoco model="K1">
+    <compiler angle="radian" />
+    <size njmax="500" nconmax="100" />
+    
+    <asset>
+        <texture name="grid" type="2d" builtin="checker" width="512" height="512"
+                rgb1="0.7 0.7 0.7" rgb2="0.3 0.3 0.3" />
+        <material name="gridmat" texture="grid" texrepeat="10 10" reflectance="0.2"/>
+
+        <mesh name="K1_base" file="K1/meshes/base_link.STL"/>
+        <mesh name="r1" file="K1/meshes/r1.STL"/>
+        <mesh name="r2" file="K1/meshes/r2.STL"/>
+        <mesh name="r3" file="K1/meshes/r3.STL"/>
+        <mesh name="r4" file="K1/meshes/r4.STL"/>
+        <mesh name="r5" file="K1/meshes/r5.STL"/>
+        <mesh name="r6" file="K1/meshes/r6.STL"/>
+        <mesh name="r7" file="K1/meshes/r7.STL"/>
+        <mesh name="rt" file="K1/meshes/rt.STL"/>
+        <mesh name="l1" file="K1/meshes/l1.STL"/>
+        <mesh name="l2" file="K1/meshes/l2.STL"/>
+        <mesh name="l3" file="K1/meshes/l3.STL"/>
+        <mesh name="l4" file="K1/meshes/l4.STL"/>
+        <mesh name="l5" file="K1/meshes/l5.STL"/>
+        <mesh name="l6" file="K1/meshes/l6.STL"/>
+        <mesh name="l7" file="K1/meshes/l7.STL"/>
+        <mesh name="lt" file="K1/meshes/lt.STL"/>
+
+        <!-- PGC50 Gripper Meshes -->
+        <mesh name="pgc50_base" file="pgc50/meshes/base_link.STL"/>
+        <mesh name="pgc50_left" file="pgc50/meshes/left_link.STL"/>
+        <mesh name="pgc50_right" file="pgc50/meshes/right_link.STL"/>
+
+
+        <!-- PGC140 Gripper Meshes
+        <mesh name="pgc50_base" file="pgc140/meshes/base_link.STL"/>
+        <mesh name="pgc50_left" file="pgc140/meshes/finger1_Link.STL"/>
+        <mesh name="pgc50_right" file="pgc140/meshes/finger2_Link.STL"/> -->
+    </asset>
+
+    <worldbody>
+        <geom name="ground" type="plane" size="10 10 0.1" pos="0 0 0" material="gridmat"/>
+
+        <body name="K1" pos="0 0 0">
+            <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="K1_base"/>
+            
+            
+            <!-- Right Arm -->
+            <body name="r1" pos="0 -0.016 0.22" quat="0.707105 0.707108 0 0">
+                <inertial pos="-2.45882e-06 -3.29465e-07 0.164279" quat="0.707167 -2.68639e-05 -9.80294e-06 0.707047" mass="1.49115" diaginertia="0.00378499 0.00305995 0.00212611"/>
+                <joint name="r-j1" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="r1"/>
+                <body name="r2" pos="0 0 0.2075" quat="-2.59734e-06 2.59735e-06 0.707108 -0.707105">
+                    <inertial pos="-1.73913e-05 -0.0453023 0.000758986" quat="0.686243 0.727372 -0.000322585 -0.000281416" mass="2.70307" diaginertia="0.00985116 0.00748601 0.00588233"/>
+                    <joint name="r-j2" pos="0 0 0" axis="0 0 1" limited="true" range="-1.8325 1.8325" damping="100"/>
+                    <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="r2"/>
+                    <body name="r3" quat="0.707105 0.707108 0 0">
+                        <inertial pos="0.00781893 0.00044317 0.236719" quat="0.709432 0.00326875 0.00248826 0.704762" mass="3.5466" diaginertia="0.0186932 0.0185279 0.00375106"/>
+                        <joint name="r-j3" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                        <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="r3"/>
+                        <body name="r4" pos="0.00040027 0 0.33028" quat="0.707105 -0.707108 0 0">
+                            <inertial pos="0.0046486 -0.0316068 0.000433525" quat="0.71089 0.701419 0.0357617 0.0369897" mass="1.47408" diaginertia="0.00381095 0.00281231 0.00223976"/>
+                            <joint name="r-j4" pos="0 0 0" axis="0 0 1" limited="true" range="-2.5307 0.5235" damping="100"/>
+                            <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="r4"/>
+                            <body name="r5" quat="0.707105 0.707108 0 0">
+                                <inertial pos="-2.41118e-06 0.00407933 0.183521" quat="0.706544 -0.0370015 0.0369242 0.705736" mass="2.28121" diaginertia="0.00562072 0.00549376 0.00191916"/>
+                                <joint name="r-j5" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                                <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="r5"/>
+                                <body name="r6" pos="0 0 0.23494" quat="-2.59734e-06 2.59735e-06 0.707108 -0.707105">
+                                    <inertial pos="-3.20486e-07 -0.0871589 0.00554183" quat="0.430954 0.560588 -0.560603 0.43098" mass="1.76792" diaginertia="0.00448857 0.00447236 0.00137688"/>
+                                    <joint name="r-j6" pos="0 0 0" axis="0 0 1" limited="true" range="-1.8325 1.8325" damping="100"/>
+                                    <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="r6"/>
+                                    <body name="r7" quat="0.707105 0.707108 0 0">
+                                        <inertial pos="2.68777e-07 -3.00437e-05 0.17668" quat="0.00107466 0.707106 0.00107466 0.707106" mass="0.636542" diaginertia="0.000512339 0.000371318 0.000370813"/>
+                                        <joint name="r-j7" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                                        <geom type="mesh" rgba="1 1 1 1" mesh="r7"/>
+                                        
+                                        <!-- 添加右臂末端夹爪 -->
+                                        <body name="r_gripper_base" pos="0 0 0.20317" quat="-0.5 0.5 -0.5 0.5">
+                                            <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="rt"/>
+                                            <body name="r_gripper_base2" pos="0 0 0" quat="0.707107 0  0.707107 0">
+                                                <!-- PGC50夹爪基础连接 -->
+                                                <body name="r_pgc50_base" pos="0 0 0">
+                                                    <geom type="mesh" rgba="1 1 1 1" mesh="pgc50_base"/>
+                                                    
+                                                    <!-- 左夹爪 -->
+                                                    <body name="r_pgc50_left" pos="-0.01069 -0.09902 -0.025492">
+                                                        <joint name="r_gripper_left" type="slide" axis="0 0 1" limited="true" range="0 0.01875" damping="10"/>
+                                                        <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="pgc50_left"/>
+                                                    </body>
+                                                    
+                                                    <!-- 右夹爪 -->
+                                                    <body name="r_pgc50_right" pos="0.01069 -0.09902 0.024508">
+                                                        <joint name="r_gripper_right" type="slide" axis="0 0 1" limited="true" range="-0.01875 0" damping="10"/>
+                                                        <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="pgc50_right"/>
+                                                    </body>
+                                                </body>
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+            
+            <!-- Left Arm -->
+            <body name="l1" pos="0 0.016 0.22" quat="-2.59734e-06 -2.59735e-06 -0.707108 -0.707105">
+                <inertial pos="-2.45882e-06 -3.29465e-07 0.164279" quat="0.707167 -2.68639e-05 -9.80294e-06 0.707047" mass="1.49115" diaginertia="0.00378499 0.00305995 0.00212611"/>
+                <joint name="l-j1" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="l1"/>
+                <body name="l2" pos="0 0 0.2075" quat="0.707105 -0.707108 0 0">
+                    <inertial pos="1.74241e-05 -0.0453023 -0.000759874" quat="0.727372 0.686243 0.000281361 0.000322928" mass="2.70307" diaginertia="0.00985116 0.00748601 0.00588232"/>
+                    <joint name="l-j2" pos="0 0 0" axis="0 0 1" limited="true" range="-1.8325 1.8325" damping="100"/>
+                    <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="l2"/>
+                    <body name="l3" quat="0.707105 0.707108 0 0">
+                        <inertial pos="0.00701838 0.000445385 0.236719" quat="0.709432 0.00326875 0.00248826 0.704762" mass="3.5466" diaginertia="0.0186932 0.0185279 0.00375106"/>
+                        <joint name="l-j3" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                        <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="l3"/>
+                        <body name="l4" pos="-0.00040027 0 0.33028" quat="0.707105 -0.707108 0 0">
+                            <inertial pos="0.00464861 -0.0316068 0.000433537" quat="0.710889 0.70142 0.0357617 0.0369896" mass="1.47408" diaginertia="0.00381095 0.00281231 0.00223977"/>
+                            <joint name="l-j4" pos="0 0 0" axis="0 0 1" limited="true" range="-2.5307 0.5235" damping="100"/>
+                            <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="l4"/>
+                            <body name="l5" quat="0.707105 0.707108 0 0">
+                                <inertial pos="2.43097e-06 -0.00407933 0.183521" quat="0.706544 0.0370015 -0.0369242 0.705736" mass="2.28121" diaginertia="0.00562072 0.00549376 0.00191916"/>
+                                <joint name="l-j5" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                                <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="l5"/>
+                                <body name="l6" pos="0 0 0.23494" quat="0.707105 -0.707108 0 0">
+                                    <inertial pos="-3.20486e-07 -0.0871589 0.00553927" quat="0.430954 0.560588 -0.560603 0.43098" mass="1.76792" diaginertia="0.00448857 0.00447236 0.00137688"/>
+                                    <joint name="l-j6" pos="0 0 0" axis="0 0 1" limited="true" range="-1.8325 1.8325" damping="100"/>
+                                    <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="l6"/>
+                                    <body name="l7" quat="0.707105 0.707108 0 0">
+                                        <inertial pos="2.68777e-07 -3.25953e-05 0.17668" quat="0.00107441 0.707106 0.00107441 0.707106" mass="0.636542" diaginertia="0.000512339 0.000371319 0.000370813"/>
+                                        <joint name="l-j7" pos="0 0 0" axis="0 0 1" limited="true" range="-6.2832 6.2832" damping="500"/>
+                                        <geom type="mesh" rgba="1 1 1 1" mesh="l7"/>
+                                        <geom pos="0 0 0.203172" quat="1 0 0 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="lt"/>
+                                        <!-- 添加左臂末端夹爪 -->
+                                        <body name="l_gripper_base" pos="0 0 0.203172" quat="-0.5 0.5 -0.5 0.5">
+                                            <body name="l_gripper_base2" pos="0 0 0" quat="0.707107 0  0.707107 0">
+                                                <!-- PGC50夹爪基础连接 -->
+                                                <body name="l_pgc50_base" pos="0 0 0" quat="1 0 0 0">
+                                                    <geom type="mesh" rgba="1 1 1 1" mesh="pgc50_base"/>
+                                                    
+                                                    <!-- 左夹爪 -->
+                                                    <body name="l_pgc50_left" pos="-0.01069 -0.09902 -0.025492">
+                                                        <joint name="l_gripper_left" type="slide" axis="0 0 1" limited="true" range="0 0.01875" damping="10"/>
+                                                        <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="pgc50_left"/>
+                                                    </body>
+                                                    
+                                                    <!-- 右夹爪 -->
+                                                    <body name="l_pgc50_right" pos="0.01069 -0.09902 0.024508">
+                                                        <joint name="l_gripper_right" type="slide" axis="0 0 1" limited="true" range="-0.01875 0" damping="10"/>
+                                                        <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="pgc50_right"/>
+                                                    </body>
+                                                </body>
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <!-- Right Arm Actuators -->
+        <position name="r-j1" joint="r-j1" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="2000" kv="100"/>
+        <position name="r-j2" joint="r-j2" ctrllimited="true" ctrlrange="-1.8325 1.8325" kp="2000" kv="100"/>
+        <position name="r-j3" joint="r-j3" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="1000" kv="50"/>
+        <position name="r-j4" joint="r-j4" ctrllimited="true" ctrlrange="-2.5307 0.5235" kp="1000" kv="50"/>
+        <position name="r-j5" joint="r-j5" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="500" kv="25"/>
+        <position name="r-j6" joint="r-j6" ctrllimited="true" ctrlrange="-1.8325 1.8325" kp="500" kv="25"/>
+        <position name="r-j7" joint="r-j7" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="500" kv="25"/>
+        
+        <!-- Left Arm Actuators -->
+        <position name="l-j1" joint="l-j1" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="2000" kv="100"/>
+        <position name="l-j2" joint="l-j2" ctrllimited="true" ctrlrange="-1.8325 1.8325" kp="2000" kv="100"/>
+        <position name="l-j3" joint="l-j3" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="1000" kv="50"/>
+        <position name="l-j4" joint="l-j4" ctrllimited="true" ctrlrange="-2.5307 0.5235" kp="1000" kv="50"/>
+        <position name="l-j5" joint="l-j5" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="500" kv="25"/>
+        <position name="l-j6" joint="l-j6" ctrllimited="true" ctrlrange="-1.8325 1.8325" kp="500" kv="25"/>
+        <position name="l-j7" joint="l-j7" ctrllimited="true" ctrlrange="-6.2832 6.2832" kp="500" kv="25"/>
+
+
+        <!-- 新增夹爪执行器（MuJoCo使用equality实现联动） -->
+        <position name="r_gripper" joint="r_gripper_left" ctrllimited="true" ctrlrange="0 0.01875" kp="10000" />
+        <position name="l_gripper" joint="l_gripper_left" ctrllimited="true" ctrlrange="0 0.01875" kp="10000" />
+        
+
+    </actuator>
+    <equality>
+        <!-- 右爪联动约束 -->
+        <joint name="r_gripper_sync" joint1="r_gripper_left" joint2="r_gripper_right" polycoef="0 -1 0"/>
+        <!-- 左爪联动约束 -->
+        <joint name="l_gripper_sync" joint1="l_gripper_left" joint2="l_gripper_right" polycoef="0 -1 0"/>
+    </equality>
+</mujoco>

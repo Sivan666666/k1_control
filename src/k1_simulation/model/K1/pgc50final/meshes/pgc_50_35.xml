@@ -1,0 +1,42 @@
+<mujoco model="pgc_50_35">
+  <compiler angle="radian"/>
+
+  <asset>
+    <mesh name="base_link" content_type="model/stl" file="base_link.STL"/>
+    <mesh name="finger1_link" content_type="model/stl" file="finger1_link.STL"/>
+    <mesh name="finger2_link" content_type="model/stl" file="finger2_link.STL"/>
+  </asset>
+
+  <worldbody>
+    <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="base_link"/>
+    <body name="finger1_link" pos="-0.025038 0.010849 0.099">
+      <inertial pos="0.0068518 -0.0045468 -0.0031193" quat="0.674942 -0.0950085 -0.303278 0.66592" mass="0.065952" diaginertia="6.24665e-06 4.49395e-06 4.0436e-06"/>
+      <joint name="finger1_joint" pos="0 0 0" axis="1 0 0" type="slide" range="0 0.0185" actuatorfrcrange="-50 50" frictionloss="5"/>
+      <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="finger1_link"/>
+    </body>
+    <body name="finger2_link" pos="0.025047 -0.010851 0.099">
+      <inertial pos="-0.0068518 0.0045468 -0.0031193" quat="0.674942 0.0950085 0.303278 0.66592" mass="0.065952" diaginertia="6.24665e-06 4.49395e-06 4.0436e-06"/>
+      <joint name="finger2_joint" pos="0 0 0" axis="1 0 0" type="slide" actuatorfrcrange="-50 50" frictionloss="5"/>
+      <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="finger2_link"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+        <!-- 新增夹爪执行器（MuJoCo使用equality实现联动） -->
+        <position name="r_gripper" joint="finger1_joint" ctrllimited="true" ctrlrange="0 0.01875" kp="10000" kv="100"/>
+    </actuator>
+  
+  <equality>
+        <!-- 右爪联动约束 -->
+        <joint name="r_gripper_sync" joint1="finger1_joint" joint2="finger2_joint" polycoef="0 -1 0" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+        
+  </equality>
+
+  <contact>
+    <exclude body1="world" body2="finger2_link"/>
+    <exclude body1="world" body2="finger1_link"/>
+    <!-- <exclude body1="finger2_link" body2="finger1_link"/> -->
+  </contact>
+
+
+</mujoco>

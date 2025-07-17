@@ -128,12 +128,12 @@ void controlTimerCallback(const ros::TimerEvent& event) {
     unified_joint_state_msg.name = ALL_JOINT_NAMES;
     unified_joint_state_msg.position.reserve(18);
     unified_joint_state_msg.position.insert(unified_joint_state_msg.position.end(), state_jpos[1].jVal, state_jpos[1].jVal + 7); // 右臂
-    // unified_joint_state_msg.position.push_back(0.0); // 右夹爪 joint 1
-    // unified_joint_state_msg.position.push_back(0.0); // 右夹爪 joint 2
+    unified_joint_state_msg.position.push_back(0.0); // 右夹爪 joint 1
+    unified_joint_state_msg.position.push_back(0.0); // 右夹爪 joint 2
     
     unified_joint_state_msg.position.insert(unified_joint_state_msg.position.end(), state_jpos[0].jVal, state_jpos[0].jVal + 7); // 左臂
-    // unified_joint_state_msg.position.push_back(0.0); // 左夹爪 joint 1
-    // unified_joint_state_msg.position.push_back(0.0); // 左夹爪 joint 2
+    unified_joint_state_msg.position.push_back(0.0); // 左夹爪 joint 1
+    unified_joint_state_msg.position.push_back(0.0); // 左夹爪 joint 2
     
     // 如果你的JAKA SDK `edg_get_stat` 不返回夹爪状态，可以先用0.0占位
     // 确保 `position` 数组的大小与 `name` 数组的大小 (18) 一致

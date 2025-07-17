@@ -52,13 +52,7 @@ def SE3_to_end_pose(T):
     # 获取欧拉角(假设是ZYX顺序，即RPY)
     eul = T.eul(unit='deg')
 
-    # 组合位置和欧拉角
-    pose_data = np.concatenate([pos, eul])
-
-    # 格式化为字符串，保留1位小数
-    pose_str = ", ".join([f"{x:.1f}" for x in pose_data])
-
-    return pose_str
+    return pos, eul
 
 
 def pose_to_se3(x, y, z, rx, ry, rz):

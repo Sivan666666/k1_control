@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="pgc_50_35">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-2.4084E-05 -9.951E-07 0.039772"
+        rpy="0 0 0" />
+      <mass
+        value="0.36016" />
+      <inertia
+        ixx="0.00013654"
+        ixy="1.4515E-09"
+        ixz="-2.2199E-07"
+        iyy="0.00015765"
+        iyz="-1.0832E-11"
+        izz="0.00015857" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pgc_50_35/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.69804 0.69804 0.69804 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pgc_50_35/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="finger1_link">
+    <inertial>
+      <origin
+        xyz="0.0068518 -0.0045468 -0.0031193"
+        rpy="0 0 0" />
+      <mass
+        value="0.065952" />
+      <inertia
+        ixx="4.3734E-06"
+        ixy="-1.8532E-07"
+        ixz="1.5747E-07"
+        iyy="6.0634E-06"
+        iyz="5.7328E-07"
+        izz="4.3474E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pgc_50_35/meshes/finger1_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.69804 0.69804 0.69804 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pgc_50_35/meshes/finger1_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="finger1_joint"
+    type="prismatic">
+    <origin
+      xyz="-0.025038 0.010849 0.099"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="finger1_link" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="0"
+      upper="0.0185"
+      effort="50"
+      velocity="0.1" />
+    <dynamics
+      friction="5" />
+  </joint>
+  <link
+    name="finger2_link">
+    <inertial>
+      <origin
+        xyz="-0.0068518 0.0045468 -0.0031193"
+        rpy="0 0 0" />
+      <mass
+        value="0.065952" />
+      <inertia
+        ixx="4.3734E-06"
+        ixy="-1.8532E-07"
+        ixz="-1.5747E-07"
+        iyy="6.0634E-06"
+        iyz="-5.7328E-07"
+        izz="4.3474E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pgc_50_35/meshes/finger2_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.69804 0.69804 0.69804 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pgc_50_35/meshes/finger2_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="finger2_joint"
+    type="prismatic">
+    <origin
+      xyz="0.025047 -0.010851 0.099"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="finger2_link" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="50"
+      velocity="0.1" />
+    <dynamics
+      friction="5" />
+    <mimic
+      joint="finger1_joint"
+      multiplier="-1"
+      offset="0" />
+  </joint>
+</robot>
