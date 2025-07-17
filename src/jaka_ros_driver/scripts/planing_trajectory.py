@@ -17,11 +17,21 @@ from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Header
 import threading
+from sensor_msgs.msg import JointState
+
 
 try:
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 except NameError:
     PROJECT_ROOT = os.getcwd()
+
+ALL_JOINT_NAMES = [
+    "r-j1", "r-j2", "r-j3", "r-j4", "r-j5", "r-j6", "r-j7",
+    "right_finger1_joint", "right_finger2_joint",  
+    "l-j1", "l-j2", "l-j3", "l-j4", "l-j5", "l-j6", "l-j7",
+    "left_finger1_joint", "left_finger2_joint" 
+    ]
+
 
 def SE3_to_end_pose(T):
     """
@@ -63,6 +73,19 @@ def pose_to_se3(x, y, z, rx, ry, rz):
 
     return T
 
+def get_pose_components(T):
+    """
+    从一个SE3对象中分解出位置(x, y, z)和RPY姿态(roll, pitch, yaw, 单位:度)。
+
+    :param T: spatialmath.SE3 对象
+    :return: 包含6个键值对的字典
+    """
+    if not isinstance(T, SE3):
+        raise TypeError("输入必须是SE3对象")
+
+    position = T.t
+    rpy_angles = T.eul(unit='deg')  # 获取Roll, Pitch, Yaw角度
+    return position, rpy_angles
 
 class K1DualArmController:
     def __init__(self, urdf_path=None):
@@ -77,10 +100,10 @@ class K1DualArmController:
         if not os.path.exists(urdf_path):
             raise FileNotFoundError(f"URDF文件未找到: {urdf_path}")
         self.robot = rtb.ERobot.URDF(file_path=urdf_path)
-        print(f"Robot model loaded from: {urdf_path}")
+        print(f"Robot model loaded from: {urdf_path},found {self.robot.n} DoFs.")
 
 
-        # Ros publish
+        # --- ROS Publishers/Subscribers ---
         rospy.init_node('k1_dual_arm_controller', anonymous=True)
         self.right_arm_pub = rospy.Publisher('/right_arm_controller/command',
                                              JointTrajectory,
@@ -90,8 +113,9 @@ class K1DualArmController:
                                             queue_size=10)
         self.vis_pub_left = rospy.Publisher('/planned_path_left', Path, queue_size=1, latch=True)
         self.vis_pub_right = rospy.Publisher('/planned_path_right', Path, queue_size=1, latch=True)
+        self.joint_state_sub = rospy.Subscriber("/joint_states",JointState, self._joint_state_callback, queue_size=1)
 
-        # 18自由度关节定义
+        # --- Joint Definitions ---
         self.right_arm_joints_indices = [0, 1, 2, 3, 4, 5, 6]  # 右臂7个关节
         self.left_arm_joints_indices = [9, 10, 11, 12, 13, 14, 15]  # 左臂7个关节
         self.right_gripper_joints = [7, 8]  # 右夹爪2个关节
@@ -112,7 +136,7 @@ class K1DualArmController:
         self.left_ee_link = "lt"
         self.right_ee_link = "rt"
 
-        # 轨迹数据存储
+        # --- State and Synchronization ---
         self.qnow = np.zeros(self.robot.n)
         self.left_trajectory = None
         self.right_trajectory = None
@@ -125,14 +149,20 @@ class K1DualArmController:
 
 
         # 初始关节位置 (示例值)
-        self.qnow_left = np.array([-1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298])* np.pi/180  # 左臂关节角度
-        self.qnow_right = np.array([1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290])* np.pi/180  # 右臂关节角度
+        self.state_lock = threading.Lock()
+        self.qnow_left = np.array([1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290])* np.pi/180  # 左臂关节角度
+        self.qnow_right = np.array([-1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298])* np.pi/180  # 右臂关节角度
         self.qnow[self.right_gripper_joints] = [0.01875, -0.01875]
         self.qnow[self.left_gripper_joints] = [0.01875, -0.01875]
         self.qnow[self.right_arm_joints_indices] = self.qnow_right
         self.qnow[self.left_arm_joints_indices] = self.qnow_left
-        logger.info(f"Initial joint state set: {self.qnow}")
+        self.q_init = self.qnow.copy()  # 保存初始关节状态  
+        rospy.loginfo(f"Initial joint state set: {self.qnow}")
 
+        # 快速查找关节名对应的索引
+        self.joint_name_to_index_map = {name: i for i, name in enumerate(ALL_JOINT_NAMES)}
+
+        # --- Kinematic Limits ---
         # 关节速度限制 (rad/s)
         self.velocity_limits = np.array([np.deg2rad(80)] * 18)
         # 关节加速度限制 (rad/s^2)
@@ -151,8 +181,11 @@ class K1DualArmController:
             print(f"Error: Target joint dimension should be {self.robot.n}, but received {q_target.size}.")
             return
 
+        with self.state_lock:
+             q_current = self.qnow.copy()
+
         # Create a path from the current point to the target point
-        waypoints = [self.qnow, q_target]
+        waypoints = [q_current, q_target]
 
         # Plan trajectory
         full_traj = self.plan_full_robot_trajectory(waypoints, velocity_scaling_factor)
@@ -166,7 +199,7 @@ class K1DualArmController:
                 self.wait_for_trajectory_completion()
             self.qnow = q_target  # 更新当前状态
 
-    def move_to_cartesian_pose(self, T_desired, arm, velocity_scaling_factor=1.0,wait=True):
+    def move_to_cartesian_pose(self, T_desired, arm, velocity_scaling_factor=1.0,wait=True,control_orientation=True):
         """
         API 2: Plans and moves one or both arms to a specified Cartesian pose(s).
 
@@ -180,6 +213,11 @@ class K1DualArmController:
         print(f"\n[API] Moving '{arm}' arm(s) to Cartesian Pose (Speed: {velocity_scaling_factor * 100:.0f}%)")
 
         q_target_full = self.qnow.copy()
+        if control_orientation:
+            mask = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        else:
+            mask = [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+
 
         if arm == 'both':
             if not isinstance(T_desired, (list, tuple)) or len(T_desired) != 2:
@@ -189,8 +227,9 @@ class K1DualArmController:
             T_right_desired, T_left_desired = T_desired
 
             # Solve for both arms
-            q_sol_r, success_r = self.inverse_kinematics(T_right_desired, 'right', self.qnow)
-            q_sol_l, success_l = self.inverse_kinematics(T_left_desired, 'left', self.qnow)
+            q_sol_r, success_r = self.inverse_kinematics(T_right_desired, 'right', self.qnow, mask=mask)
+            q_sol_l, success_l = self.inverse_kinematics(T_left_desired, 'left', self.qnow, mask=mask)
+
 
             if not (success_r and success_l):
                 print("Aborting move: IK solution failed for one or both arms.")
@@ -200,7 +239,7 @@ class K1DualArmController:
             q_target_full[self.left_arm_joints_indices] = q_sol_l
 
         elif arm in ['left', 'right']:
-            q_sol_arm, success = self.inverse_kinematics(T_desired, arm, self.qnow)
+            q_sol_arm, success = self.inverse_kinematics(T_desired, arm, self.qnow, mask=mask)
             if not success:
                 print("Aborting move: Cannot find an IK solution.")
                 return
@@ -215,6 +254,31 @@ class K1DualArmController:
 
         # Move the whole robot to the new unified joint state
         self.move_to_joint_target(q_target_full, velocity_scaling_factor)
+    
+    
+    def move_to_cartesian_pose_robust(self, T_desired, arm, velocity_scaling_factor=1.0, wait=True):
+        """
+        [更智能的API] 移动到笛卡尔位姿。如果完整位姿不可达，则自动尝试只控制位置。
+        """
+        logger.info(f"API: 尝试移动 '{arm}' 臂到目标位姿 (智能模式)")
+        
+        # 步骤1: 尝试求解完整位姿 (位置+姿态)
+        is_reachable = self.is_pose_reachable(T_desired, arm, control_orientation=True)
+        
+        if is_reachable:
+            logger.info("完整位姿可达，将按指定位姿移动。")
+            self.move_to_cartesian_pose(T_desired, arm, velocity_scaling_factor, wait, control_orientation=True)
+            return
+
+        # 步骤2: 如果上一步失败，尝试只求解位置
+        logger.warning("完整位姿不可达，正在尝试仅控制位置...")
+        is_reachable_pos_only = self.is_pose_reachable(T_desired, arm, control_orientation=False)
+
+        if is_reachable_pos_only:
+            logger.info("仅位置可达，将移动到该位置（姿态自适应）。")
+            self.move_to_cartesian_pose(T_desired, arm, velocity_scaling_factor, wait, control_orientation=False)
+        else:
+            logger.error("任务中止: 即便只控制位置，目标点依然不可达。")
 
     # ================================================================= #
     # ================         planning and visualization        ================ #
@@ -301,7 +365,7 @@ class K1DualArmController:
         rospy.loginfo("可视化路径已发布。请在RViz中添加Path显示并订阅该话题。")
 
     # ================================================================= #
-    # ================         ROS执行回调        ================ #
+    # ================         ROS Interfacing        ================ #
     # ================================================================= #
     def start_trajectory_execution(self):
         """启动一个rospy.Timer来发送轨迹点"""
@@ -369,108 +433,38 @@ class K1DualArmController:
         right_msg.points.append(point_r)
         self.right_arm_pub.publish(right_msg)
 
+    def _joint_state_callback(self, msg):
+        # 使用线程锁来安全地更新共享变量 self.qnow
+        with self.state_lock:
+            # 遍历收到的消息中的每一个关节
+            for i, name in enumerate(msg.name):
+                # 检查这个关节名是否是我们关心的
+                if name in self.joint_name_to_index_map:
+                    # 获取该关节名在我们18-DOF数组中对应的索引
+                    idx = self.joint_name_to_index_map[name]
+                    # 更新self.qnow中对应的值
+                    self.qnow[idx] = msg.position[i]
+                    
+        rospy.loginfo_throttle(1.0, "机器人状态 self.qnow 已更新。")
+
     def wait_for_trajectory_completion(self):
         """等待当前轨迹执行完成"""
         rospy.loginfo("等待轨迹执行完成...")
         self.trajectory_completion_event.wait()
         rospy.loginfo("轨迹完成，继续。")
 
-
-    def dual_arm_command_j_send_callback(self, event):
+    # =================================================================== #
+    # ===========  Basic Function   ==================================== #
+    # =================================================================== #
+    def is_pose_reachable(self, T_desired, arm, control_orientation=True):
         """
-        8ms定时器回调函数，根据实际经过时间发布对应轨迹点
+        辅助函数：检查一个位姿是否可达，但不实际移动机器人。
+        返回 True 如果可达, False 如果不可达。
         """
-        if self.left_trajectory is None or self.right_trajectory is None:
-            return
-
-        if self.trajectory_start_time is None:
-            return
-
-        # 计算当前时间点（从轨迹开始算起）
-        current_time = (rospy.Time.now() - self.trajectory_start_time).to_sec()
-        total_duration_left = self.left_trajectory['time'][-1]
-        total_duration_right = self.right_trajectory['time'][-1]
-
-        # 初始化标志位
-        left_arm_active = True
-        right_arm_active = True
-
-        # 检查左臂是否已完成轨迹
-        if current_time >= total_duration_left:
-            if not self.left_arm_finished:
-                rospy.loginfo("LEFT 轨迹执行完成")
-                self.left_arm_finished = True
-            left_arm_active = False
-
-        # 检查右臂是否已完成轨迹
-        if current_time >= total_duration_right:
-            if not self.right_arm_finished:
-                rospy.loginfo("RIGHT 轨迹执行完成")
-                self.right_arm_finished = True
-            right_arm_active = False
-
-        # 如果两条臂都完成，则停止定时器
-        if not left_arm_active and not right_arm_active:
-            self.timer.shutdown()
-            self.prepare_next_trajectory()
-            return
-
-        # 分别找到左右臂当前时间对应的轨迹点索引
-        if left_arm_active:
-            left_idx = np.searchsorted(self.left_trajectory['time'], current_time, side='left')
-            left_idx = min(left_idx, len(self.left_trajectory['time']) - 1)
-
-        if right_arm_active:
-            right_idx = np.searchsorted(self.right_trajectory['time'], current_time, side='left')
-            right_idx = min(right_idx, len(self.right_trajectory['time']) - 1)
-
-        # 发布左臂指令（如果活跃）
-        if left_arm_active:
-            left_msg = JointTrajectory()
-            left_msg.joint_names = [
-                'left_arm_joint1', 'left_arm_joint2', 'left_arm_joint3',
-                'left_arm_joint4', 'left_arm_joint5', 'left_arm_joint6',
-                'left_arm_joint7'
-            ]
-            left_msg.header.stamp = rospy.Time.now()
-
-            left_point = JointTrajectoryPoint()
-            left_point.positions = self.left_trajectory['position'][left_idx].tolist()
-            left_point.velocities = self.left_trajectory['velocity'][left_idx].tolist()
-            left_point.accelerations = self.left_trajectory['acceleration'][left_idx].tolist()
-            left_point.time_from_start = rospy.Duration(self.left_trajectory['time'][left_idx])
-            left_msg.points = [left_point]
-            self.left_arm_pub.publish(left_msg)
-
-            left_end_control = PoseStamped()
-            left_end_control.pose.position.x = left_point.positions[6]
-            self.left_end_joint_pub.publish(left_end_control)
-
-        # 发布右臂指令（如果活跃）
-        if right_arm_active:
-            right_msg = JointTrajectory()
-            right_msg.joint_names = [
-                'right_arm_joint1', 'right_arm_joint2', 'right_arm_joint3',
-                'right_arm_joint4', 'right_arm_joint5', 'right_arm_joint6',
-                'right_arm_joint7'
-            ]
-            right_msg.header.stamp = rospy.Time.now()
-
-            right_point = JointTrajectoryPoint()
-            right_point.positions = self.right_trajectory['position'][right_idx].tolist()
-            right_point.velocities = self.right_trajectory['velocity'][right_idx].tolist()
-            right_point.accelerations = self.right_trajectory['acceleration'][right_idx].tolist()
-            right_point.time_from_start = rospy.Duration(self.right_trajectory['time'][right_idx])
-            right_msg.points = [right_point]
-            self.right_arm_pub.publish(right_msg)
-
-        # 打印进度（每50个点打印一次）
-        if left_arm_active and left_idx % 50 == 0:
-            rospy.loginfo(
-                f"左臂轨迹进度: {current_time:.3f}/{total_duration_left:.3f}s | 点 {left_idx}/{len(self.left_trajectory['time'])}")
-        if right_arm_active and right_idx % 50 == 0:
-            rospy.loginfo(
-                f"右臂轨迹进度: {current_time:.3f}/{total_duration_right:.3f}s | 点 {right_idx}/{len(self.right_trajectory['time'])}")
+        print(f"正在检查可达性: Arm '{arm}', 姿态控制: {control_orientation}")
+        mask = [1.0]*6 if control_orientation else [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+        _ , success = self.inverse_kinematics(T_desired, arm, self.qnow, mask)
+        return success
 
     def forward_kinematics(self, q, arm='left'):
         """
@@ -494,17 +488,15 @@ class K1DualArmController:
         T = self.robot.fkine(q, end=ee_link)
         return T
 
-    def inverse_kinematics(self, T_desired, arm='left', q0=None, tol=1e-5, max_iter=100000):
+    def inverse_kinematics(self, T_desired, arm='left', q0=None, mask=None, tol=1e-5, max_iter=10000):
         """
-        逆运动学求解
-
+        逆运动学求解    
         参数:
             T_desired: 期望的末端位姿(SE3)
             arm: 'left'或'right'，指定左臂或右臂
             q0: 初始关节角度猜测(可选)
             tol: 容差
-            max_iter: 最大迭代次数
-
+            max_iter: 最大迭代次数  
         返回:
             q_sol: 解得的关节角度
             success: 是否成功求解
@@ -522,17 +514,19 @@ class K1DualArmController:
         # 如果没有提供初始猜测，使用零位
         if q0 is None:
             q0 = np.zeros(self.robot.n)
-
+        
+        if mask is None:
+            mask = [1, 1, 1, 1, 1, 1]
+        
         # 设置QP参数
         kq = 1.0  # 关节限制避免增益
         km = 0.0  # 可操作性最大化增益 (0表示禁用)
-
-        # 使用机器人工具箱的IK求解
+        # 使用机器人工具箱的IK求解       
         sol = self.robot.ikine_LM(
             T_desired,
             end=ee_link,
             q0=q0[joint_indices],
-            mask=[1, 1, 1, 1, 1, 1],  # 控制位置和方向
+            mask=mask,  # 控制位置和方向
             tol=tol,
             joint_limits=True,
             ilimit=max_iter,
@@ -543,14 +537,14 @@ class K1DualArmController:
 
         # # 使用机器人工具箱的IK求解
         # sol = self.robot.ikine_LM(
-        #     T_desired,
+        #     T_desired, 
         #     end=ee_link,
         #     q0=q0[joint_indices],
         #     mask=[1, 1, 1, 1, 1, 1],  # 控制位置和方向
         #     tol=tol,
         #     ilimit=max_iter
         # )
-        # print("solution:",sol)
+        #print("solution:",sol)
         if sol.success:
             # 只返回对应臂的关节角度
             q_sol = sol.q[:7]
@@ -588,14 +582,22 @@ if __name__ == "__main__":
             1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290,# 左
             0, 0
         ]))
+      
+
+        # ================================================================= #
+        # ================         Demo1        ================ #
+        # ================================================================= #
         rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
+        controller.move_to_joint_target(q_home, velocity_scaling_factor=1.0, wait=True)
+        rospy.loginfo("Already move to initial point ,sleep 3s")
+        time.sleep(3)
 
-        controller.move_to_joint_target(q_home, velocity_scaling_factor=0.6, wait=True)
-
-        # ---------- Demo
+        
+        # ================================================================= #
+        # ================         Demo2        ================ #
+        # ================================================================= #
         if not rospy.is_shutdown():
             rospy.loginfo("\n======== Demo: 双臂移动  ========")
-
             # 获取当前位姿
             current_pose_left = controller.forward_kinematics(controller.qnow, arm='left')
             current_pose_right = controller.forward_kinematics(controller.qnow, arm='right')

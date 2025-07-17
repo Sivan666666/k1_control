@@ -7,7 +7,12 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "env":{
+                "PYTHONPATH":
+                "/home/hwk/.local/lib/python3.8/site-packages:/home/hwk/ros_ws/k1_ros/devel/lib/python3/dist-packages:/home/hwk/ros_ws/camera_ros/devel/lib/python3/dist-packages:/home/hwk/ros_ws/piper_ros/devel/lib/python3/dist-packages:/opt/ros/noetic/lib/python3/dist-packages"
+
+            }
         }
     ]
 }

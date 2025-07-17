@@ -1,14 +1,15 @@
 <launch>
 
-  <param name="robot_description" textfile="$(find jaka_ros_driver)/scripts/model/K1/urdf/k1_pgc_j4_limit.urdf" />
+  <param name="robot_description" textfile="$(find jaka_ros_driver)/model/k1/urdf/k1_pgc_j4_limit.urdf" />
+  <!-- <param name="robot_description" textfile="$(find k1_description)/urdf/k1_description.urdf" /> -->
 
 
   <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
 
+  <!-- publish your joint state -->
+  <!-- <node name="joint_state_publisher_gui" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" /> -->
 
-  <node name="joint_state_publisher_gui" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
 
-
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find jaka_ros_driver)/rviz/display_config.rviz" required="true" />
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find jaka_ros_driver)/rviz/display_robot.rviz" required="true" />
 
 </launch>

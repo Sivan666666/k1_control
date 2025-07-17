@@ -40,10 +40,10 @@ ros::Publisher left_end_joint_pub;
 ros::Publisher joint_states_pub;
 
 const std::vector<std::string> ALL_JOINT_NAMES = {
-    "right_arm_joint1", "right_arm_joint2", "right_arm_joint3", "right_arm_joint4", "right_arm_joint5", "right_arm_joint6", "right_arm_joint7",
-    "right_gripper_joint1", "right_gripper_joint2",
-    "left_arm_joint1", "left_arm_joint2", "left_arm_joint3", "left_arm_joint4", "left_arm_joint5", "left_arm_joint6", "left_arm_joint7",
-    "left_gripper_joint1", "left_gripper_joint2"
+    "r-j1", "r-j2", "r-j3", "r-j4", "r-j5", "r-j6", "r-j7",
+    "right_finger1_joint", "right_finger2_joint",  
+    "l-j1", "l-j2", "l-j3", "l-j4", "l-j5", "l-j6", "l-j7",
+    "left_finger1_joint", "left_finger2_joint" 
 };
 
 // 左臂回调函数
@@ -144,7 +144,7 @@ void controlTimerCallback(const ros::TimerEvent& event) {
     // 发布这个统一的消息
     joint_states_pub.publish(unified_joint_state_msg);
 
-    
+
     // 创建并发布左臂关节状态消息
     sensor_msgs::JointState left_jpos_msg;
     left_jpos_msg.header.stamp = ros::Time::now();
@@ -301,7 +301,6 @@ int main(int argc, char** argv) {
     left_arm_cpos_pub = nh.advertise<geometry_msgs::PoseStamped>("/left_arm/cpos", 10);
     right_arm_jpos_pub = nh.advertise<sensor_msgs::JointState>("/right_arm/jpos", 10);
     right_arm_cpos_pub = nh.advertise<geometry_msgs::PoseStamped>("/right_arm/cpos", 10);
-    left_end_joint_pub = nh.advertise<geometry_msgs::PoseStamped>("/left/end_joint_feedback",10);
     joint_states_pub = nh.advertise<sensor_msgs::JointState>("/joint_states", 10);
 
     // 创建8ms定时器

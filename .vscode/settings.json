@@ -16,5 +16,6 @@
         "--compile-commands-dir=${workspaceFolder}/build"
     ],
     "files.autoSave": "afterDelay",
-    "files.autoSaveDelay": 1000
+    "files.autoSaveDelay": 1000,
+    "github.copilot.chat.codeGeneration.useInstructionFiles": true
 }

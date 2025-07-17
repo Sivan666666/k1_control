@@ -1,0 +1,51 @@
+<mujoco model="pgc50new">
+  <compiler angle="radian"/>
+
+  <option integrator="implicitfast"/>
+
+  <asset>
+
+    <material name="white" rgba="1 1 1 1"/>
+    <material name="gray" rgba="0.753 0.753 0.753 1"/>
+    <material name="black" rgba="0.149 0.149 0.149 1"/>
+
+
+    <mesh name="base_link" content_type="model/stl" file="base_link.STL"/>
+    <mesh name="finger1_link" content_type="model/stl" file="finger1_link.STL"/>
+    <mesh name="finger2_link" content_type="model/stl" file="finger2_link.STL"/>
+
+  </asset>
+
+  <worldbody>
+    <geom type="mesh" material="gray" mesh="base_link"/>
+    <body name="finger1_link" pos="0.025043 -0.01085 0.099">
+      <inertial pos="0.0030491 -0.0066024 0.0064209" quat="0.675095 0.0437776 -0.107674 0.728516" mass="0.014278" diaginertia="2.35597e-06 1.75554e-06 1.28399e-06"/>
+      <joint name="finger1_joint" pos="0 0 0" axis="-1 0 0" type="slide" range="0 0.0185"/>
+      <geom type="mesh" rgba="1 1 1 1" mesh="finger1_link"/>
+      <geom type="box" size="0.01 0.01 0.01" pos="0.003 0.008 0.014" rgba="0 1 0 0.3" contype="1" conaffinity="1"/>
+    </body>
+    <body name="finger2_link" pos="-0.025043 0.01085 0.099">
+      <inertial pos="0.0030491 -0.0066024 0.0064209" quat="0.675095 0.0437776 -0.107674 0.728516" mass="0.014278" diaginertia="2.35597e-06 1.75554e-06 1.28399e-06"/>
+      <joint name="finger2_joint" pos="0 0 0" axis="1 0 0" type="slide"  range="0 0.0185"/>
+      <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="finger2_link"/>
+    </body>
+  </worldbody>
+
+   <actuator>
+        <!-- 新增夹爪执行器（MuJoCo使用equality实现联动） -->
+        <position name="r_gripper" joint="finger1_joint" ctrllimited="true" ctrlrange="0 0.01875" kp="10000" kv="100"/>
+    </actuator>
+  
+  <equality>
+        <!-- 右爪联动约束 -->
+        <joint name="r_gripper_sync" joint1="finger1_joint" joint2="finger2_joint" polycoef="0 1 0" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+        
+  </equality>
+
+  <contact>
+    <exclude body1="world" body2="finger2_link"/>
+    <exclude body1="world" body2="finger1_link"/>
+    <!-- <exclude body1="finger2_link" body2="finger1_link"/> -->
+  </contact>
+
+</mujoco>
