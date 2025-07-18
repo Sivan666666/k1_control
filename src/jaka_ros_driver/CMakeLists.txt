@@ -94,3 +94,12 @@ target_link_libraries(sub ${catkin_LIBRARIES} ${COMMON_LIBS})
 add_dependencies(sub
   ${catkin_EXPORTED_TARGETS}  # 替代${PROJECT_NAME}_generate_messages_cpp
 )
+
+add_executable(test_servoj src/test_servoj.cpp src/common.h src/timespec.cpp src/common.cpp)
+target_link_libraries(test_servoj
+  ${catkin_LIBRARIES}
+  ${COMMON_LIBS}  # 链接JAKA SDK库
+)
+add_dependencies(test_servoj  
+  ${catkin_EXPORTED_TARGETS}  # 替代${PROJECT_NAME}_generate_messages_cpp
+)
