@@ -31,6 +31,7 @@ JointValue target_right_joint;
 JointValue state_jpos[2];
 CartesianPose state_cpos[2];
 uint32_t cmd_index = 0;
+uint32_t cmd_index1 = 0;
 
 ros::Publisher left_arm_jpos_pub;
 ros::Publisher left_arm_cpos_pub;
@@ -46,6 +47,13 @@ const std::vector<std::string> ALL_JOINT_NAMES = {
     "left_finger1_joint", "left_finger2_joint" 
 };
 
+void convertJointValueToRad(JointValue& joint_value) {
+    for (int i = 0; i < 7; ++i) {
+        joint_value.jVal[i] = deg2rad(joint_value.jVal[i]);
+    }
+};
+
+
 // 左臂回调函数
 void leftArmCallback(const trajectory_msgs::JointTrajectory::ConstPtr& msg) {
     // robot.edg_get_stat(0, &state_jpos[0], &state_cpos[0]);
@@ -58,11 +66,11 @@ void leftArmCallback(const trajectory_msgs::JointTrajectory::ConstPtr& msg) {
         for (int i = 0; i < 7 && i < point->positions.size(); ++i) {
             target_left_joint.jVal[i] = point->positions[i];
         }
-        // ROS_INFO("Left Arm Joints: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]", 
-        //         target_left_joint.jVal[0], target_left_joint.jVal[1],
-        //         target_left_joint.jVal[2], target_left_joint.jVal[3],
-        //         target_left_joint.jVal[4], target_left_joint.jVal[5],
-        //         target_left_joint.jVal[6]);
+        ROS_INFO("Receive Control Left Arm Joints: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]", 
+            rad2deg(target_left_joint.jVal[0]), rad2deg(target_left_joint.jVal[1]),
+            rad2deg(target_left_joint.jVal[2]), rad2deg(target_left_joint.jVal[3]),
+            rad2deg(target_left_joint.jVal[4]), rad2deg(target_left_joint.jVal[5]),
+            rad2deg(target_left_joint.jVal[6]));
         robot.edg_servo_j(0, &target_left_joint, MoveMode::ABS);
         int result = robot.edg_send(&cmd_index);
         cmd_index++;
@@ -83,19 +91,20 @@ void rightArmCallback(const trajectory_msgs::JointTrajectory::ConstPtr& msg) {
         for (int i = 0; i < 7 && i < point->positions.size(); ++i) {
             target_right_joint.jVal[i] = point->positions[i];
         }
-        ROS_INFO("Right Arm Joints: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]", 
-                target_right_joint.jVal[0], target_right_joint.jVal[1],
-                target_right_joint.jVal[2], target_right_joint.jVal[3],
-                target_right_joint.jVal[4], target_right_joint.jVal[5],
-                target_right_joint.jVal[6]);
-    }
+        ROS_INFO("Receive Control Right Arm Joints: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]", 
+            rad2deg(target_right_joint.jVal[0]), rad2deg(target_right_joint.jVal[1]),
+            rad2deg(target_right_joint.jVal[2]), rad2deg(target_right_joint.jVal[3]),
+            rad2deg(target_right_joint.jVal[4]), rad2deg(target_right_joint.jVal[5]),
+            rad2deg(target_right_joint.jVal[6]));
+    
         robot.edg_servo_j(1, &target_right_joint, MoveMode::ABS);
-        int result = robot.edg_send(&cmd_index);
-        cmd_index++;
+        int result = robot.edg_send(&cmd_index1);
+        cmd_index1++;
         if (result != 0)
         {
             ROS_INFO("Failed to send servo_p command. Error code: %d", result);
         }
+    }
 }
 
 // 控制定时器回调函数
@@ -251,7 +260,11 @@ int main(int argc, char** argv) {
     jpos[1].jVal[5] = deg2rad(5.6);
     jpos[1].jVal[6] = deg2rad(126.3);
 
-
+    // test
+    JointValue jpos1[2]={{-1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298},
+    {1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290}};// 和urdf对应，第一个是右臂，第二个是左臂
+    convertJointValueToRad(jpos1[0]);
+    convertJointValueToRad(jpos1[1]);
 
     double jv[2] = {deg2rad(50),deg2rad(50)};
     double ja[2] = {deg2rad(500),deg2rad(500)};
@@ -261,8 +274,8 @@ int main(int argc, char** argv) {
     double v[] = {50,50};
     double a[] = {200,200};
     CartesianPose cpos[2];
-    robot.kine_forward(0,&jpos[0],&cpos[0]);
-    robot.kine_forward(1,&jpos[1],&cpos[1]);
+    // robot.kine_forward(0,&jpos1[0],&cpos[0]);
+    // robot.kine_forward(1,&jpos1[1],&cpos[1]);
     cpos[0].tran.z += 10;
     cpos[1].tran.z += 10;
     // robot.robot_run_multi_movl(DUAL,mode,true,cpos,v,a);
@@ -279,6 +292,11 @@ int main(int argc, char** argv) {
     int enable0 = robot.servo_move_enable(1, 0);
     int enable1 =robot.servo_move_enable(1, 1);
 
+    robot.edg_servo_j(1, &jpos1[0], MoveMode::ABS); // 给右臂赋值
+    int result = robot.edg_send(&cmd_index1);
+    robot.edg_servo_j(0, &jpos1[1], MoveMode::ABS); //给左臂赋值
+    result = robot.edg_send(&cmd_index1);
+
     if (enable0 != 0)
     {
             ROS_INFO("Failed to enable servo. Error code: %d", enable0);
@@ -287,7 +305,7 @@ int main(int argc, char** argv) {
     {
             ROS_INFO("Failed to enable servo. Error code: %d", enable1);
     }
-
+    // robot.servo_move_enable(0, -1);
     // 初始化目标关节值
     memset(&target_left_joint, 0, sizeof(JointValue));
     memset(&target_right_joint, 0, sizeof(JointValue));

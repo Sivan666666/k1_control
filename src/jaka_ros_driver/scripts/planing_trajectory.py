@@ -160,12 +160,12 @@ class K1DualArmController:
         # 关节速度限制 (rad/s)
         self.velocity_limits = np.array([np.deg2rad(80)] * 18)
         # 关节加速度限制 (rad/s^2)
-        self.acceleration_limits = np.array([np.deg2rad(100)] * 18)
+        self.acceleration_limits = np.array([np.deg2rad(50)] * 18)
 
     # ================================================================= #
     # ================         High-Level API Functions         ==================== #
     # ================================================================= #
-    def move_to_joint_target(self, q_target, velocity_scaling_factor=1.0,wait=True):
+    def move_to_fixed_joint_target(self, q_target, velocity_scaling_factor=1.0,wait=True):
         """
         (API 1) Plans and moves to the specified target joint position.
         """
@@ -188,6 +188,40 @@ class K1DualArmController:
             self.visualize_trajectory_ros(full_traj)  # <--- 在此可视化
             rospy.loginfo("路径已发布供RViz预览。将在2秒后开始运动...")
             rospy.sleep(2)
+            self.start_trajectory_execution()
+            if wait:
+                self.wait_for_trajectory_completion()
+            self.qnow = q_target  # 更新当前状态
+
+
+    def move_to_joint_target(self, q_target, velocity_scaling_factor=1.0,wait=True):
+        """
+        (API 1) Plans and moves to the specified target joint position.
+        """
+        print(f"\n[API] Moving to Joint Target (Speed: {velocity_scaling_factor * 100:.0f}%)")
+        q_target = np.array(q_target)
+        if q_target.size != self.robot.n:
+            print(f"Error: Target joint dimension should be {self.robot.n}, but received {q_target.size}.")
+            return
+
+        with self.state_lock:
+             q_current = self.qnow.copy()
+
+        print(f"当前关节状态: {np.array(q_current) * 180 / np.pi}")
+        print(f"目标关节状态: {np.array(q_target) * 180 / np.pi}")
+
+        # Create a path from the current point to the target point
+        waypoints = [q_current, q_target]
+
+        # Plan trajectory
+        full_traj = self.plan_full_robot_trajectory(waypoints, velocity_scaling_factor)
+        print('full_traj:',np.rad2deg( full_traj['position']))
+
+        if full_traj and self.split_and_store_trajectory(full_traj):
+            self.visualize_trajectory_ros(full_traj)  # <--- 在此可视化
+            rospy.loginfo("路径已发布供RViz预览。将在2秒后开始运动...")
+            rospy.sleep(2)
+            input("按下回车键以确认并开始运动，或按 Ctrl+C 取消...")
             self.start_trajectory_execution()
             if wait:
                 self.wait_for_trajectory_completion()
@@ -347,12 +381,14 @@ class K1DualArmController:
             pose_l.pose.position.x, pose_l.pose.position.y, pose_l.pose.position.z = T_left.t
             pose_l.pose.orientation.w = 1.0 # TODO： simple orientation
             left_path_msg.poses.append(pose_l)
+            print(f"左臂末端位姿: {SE3_to_end_pose(T_left)}")
 
             T_right = self.forward_kinematics(q_18dof, 'right')
             pose_r = PoseStamped(header=right_path_msg.header)
             pose_r.pose.position.x, pose_r.pose.position.y, pose_r.pose.position.z = T_right.t
             pose_r.pose.orientation.w = 1.0
             right_path_msg.poses.append(pose_r)
+            print(f"右臂末端位姿: {SE3_to_end_pose(T_right)}")
 
         self.vis_pub_left.publish(left_path_msg)
         self.vis_pub_right.publish(right_path_msg)
@@ -405,7 +441,7 @@ class K1DualArmController:
             right_idx = left_idx  # 因为时间轴是统一的
             time_from_start_l = rospy.Duration(elapsed_time)
             time_from_start_r = rospy.Duration(elapsed_time)
-
+        print(left_idx)
         # 创建并发布左臂消息
         header = Header(stamp=rospy.Time.now())
         left_msg = JointTrajectory(joint_names=self.left_arm_joint_names, header=header)
@@ -415,8 +451,10 @@ class K1DualArmController:
         point_l.accelerations = self.left_trajectory['acceleration'][left_idx]
         point_l.time_from_start = time_from_start_l
         left_msg.points.append(point_l)
+        print(f"发布右LEFT臂轨迹点: {np.array(point_l.positions)* 180 / np.pi}")
+        print(f"发布left轨迹点: {left_msg}")
         self.left_arm_pub.publish(left_msg)
-
+        print(right_idx)
         # 创建并发布右臂消息
         right_msg = JointTrajectory(joint_names=self.right_arm_joint_names, header=header)
         point_r = JointTrajectoryPoint()
@@ -425,6 +463,8 @@ class K1DualArmController:
         point_r.accelerations = self.right_trajectory['acceleration'][right_idx]
         point_r.time_from_start = time_from_start_r
         right_msg.points.append(point_r)
+        print(f"发布右臂轨迹点: {np.array(point_r.positions)* 180 / np.pi}")
+        print(f"发布RIGHT轨迹点: {right_msg}")
         self.right_arm_pub.publish(right_msg)
 
     def _joint_state_callback(self, msg):
@@ -437,8 +477,7 @@ class K1DualArmController:
                     # 获取该关节名在我们18-DOF数组中对应的索引
                     idx = self.joint_name_to_index_map[name]
                     # 更新self.qnow中对应的值
-                    self.qnow[idx] = msg.position[i]
-                    
+                    self.qnow[idx] = msg.position[i]          
         rospy.loginfo_throttle(1.0, "机器人状态 self.qnow 已更新。")
 
     def wait_for_trajectory_completion(self):
@@ -576,13 +615,17 @@ if __name__ == "__main__":
             1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290,# 左
             0, 0
         ]))
-      
 
+        # rospy.sleep(10)
+      
+        T = controller.forward_kinematics(q_home, arm = 'right')
+        print(SE3_to_end_pose(T))
         # ================================================================= #
         # ================         Demo1        ================ #
         # ================================================================= #
         rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
-        controller.move_to_joint_target(q_home, velocity_scaling_factor=1.0, wait=True)
+        q_init_from_home = controller.qnow.copy()
+        controller.move_to_joint_target(q_init_from_home, velocity_scaling_factor=1.0, wait=True)
         rospy.loginfo("Already move to initial point ,sleep 3s")
         time.sleep(3)
 
