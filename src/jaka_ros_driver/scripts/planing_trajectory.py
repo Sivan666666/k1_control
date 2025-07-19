@@ -31,55 +31,79 @@ ALL_JOINT_NAMES = [
     "l-j1", "l-j2", "l-j3", "l-j4", "l-j5", "l-j6", "l-j7",
     "left_finger1_joint", "left_finger2_joint" 
     ]
+from scipy.spatial.transform import Rotation as R
 
-
-def SE3_to_end_pose(T):
+def SE3_to_end_pose(T, order='XYZ'):
     """
-    将SE3变换矩阵转换为机械臂末端位姿格式(x,y,z,rx,ry,rz)
+    将SE3变换矩阵转换为机械臂末端位姿格式(x, y, z, rx, ry, rz)
 
     参数:
         T: SE3变换矩阵
+        order: 欧拉角的旋转顺序，默认为 'ZYX' (Roll-Pitch-Yaw)
 
     返回:
-        str: 格式为"x, y, z, rx, ry, rz"的字符串，角度单位为度
+        tuple: 包含位置 (x, y, z) 和欧拉角 (rx, ry, rz)，角度单位为度
     """
     if not isinstance(T, SE3):
         raise ValueError("输入必须是SE3对象")
 
-    # 获取位置(x,y,z)
+    # 获取位置 (x, y, z)
     pos = T.t
 
-    # 获取欧拉角(假设是ZYX顺序，即RPY)
-    eul = T.eul(unit='deg')
+    # 从旋转矩阵计算欧拉角
+    rotation_matrix = T.R
+    r = R.from_matrix(rotation_matrix)
+    eul = r.as_euler(order.lower(), degrees=True)  # 转换为指定顺序的欧拉角，单位为度
 
     return pos, eul
 
+# def SE3_to_end_pose(T):
+#     """
+#     将SE3变换矩阵转换为机械臂末端位姿格式(x,y,z,rx,ry,rz)
 
-def pose_to_se3(x, y, z, rx, ry, rz):
-    # 将角度从度转换为弧度
-    rx, ry, rz = np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(rz)
+#     参数:
+#         T: SE3变换矩阵
 
-    # 创建旋转矩阵
-    R = SE3.Rz(rz) * SE3.Ry(ry) * SE3.Rx(rx)
+#     返回:
+#         str: 格式为"x, y, z, rx, ry, rz"的字符串，角度单位为度
+#     """
+#     if not isinstance(T, SE3):
+#         raise ValueError("输入必须是SE3对象")
 
-    # 创建齐次变换矩阵
-    T = SE3.Rt(R.R, [x, y, z])
+#     # 获取位置(x,y,z)
+#     pos = T.t
 
-    return T
+#     # 获取欧拉角(假设是ZYX顺序，即RPY)
+#     eul = T.eul(seq='XYZ', unit='deg')
 
-def get_pose_components(T):
-    """
-    从一个SE3对象中分解出位置(x, y, z)和RPY姿态(roll, pitch, yaw, 单位:度)。
+#     return pos, eul
 
-    :param T: spatialmath.SE3 对象
-    :return: 包含6个键值对的字典
-    """
-    if not isinstance(T, SE3):
-        raise TypeError("输入必须是SE3对象")
 
-    position = T.t
-    rpy_angles = T.eul(unit='deg')  # 获取Roll, Pitch, Yaw角度
-    return position, rpy_angles
+# def pose_to_se3(x, y, z, rx, ry, rz):
+#     # 将角度从度转换为弧度
+#     rx, ry, rz = np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(rz)
+
+#     # 创建旋转矩阵
+#     R = SE3.Rz(rz) * SE3.Ry(ry) * SE3.Rx(rx)
+
+#     # 创建齐次变换矩阵
+#     T = SE3.Rt(R.R, [x, y, z])
+
+#     return T
+
+# def get_pose_components(T):
+#     """
+#     从一个SE3对象中分解出位置(x, y, z)和RPY姿态(roll, pitch, yaw, 单位:度)。
+
+#     :param T: spatialmath.SE3 对象
+#     :return: 包含6个键值对的字典
+#     """
+#     if not isinstance(T, SE3):
+#         raise TypeError("输入必须是SE3对象")
+
+#     position = T.t
+#     rpy_angles = T.eul(unit='deg')  # 获取Roll, Pitch, Yaw角度
+#     return position, rpy_angles
 
 class K1DualArmController:
     def __init__(self, urdf_path=None):
@@ -222,6 +246,7 @@ class K1DualArmController:
             rospy.loginfo("路径已发布供RViz预览。将在2秒后开始运动...")
             rospy.sleep(2)
             input("按下回车键以确认并开始运动，或按 Ctrl+C 取消...")
+            print("开始运动！")
             self.start_trajectory_execution()
             if wait:
                 self.wait_for_trajectory_completion()
@@ -618,7 +643,7 @@ if __name__ == "__main__":
 
         # rospy.sleep(10)
       
-        T = controller.forward_kinematics(q_home, arm = 'right')
+        T = controller.forward_kinematics(q_home, arm = 'left')
         print(SE3_to_end_pose(T))
         # ================================================================= #
         # ================         Demo1        ================ #

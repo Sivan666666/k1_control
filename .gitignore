@@ -1,6 +1,8 @@
-# .vscode
+.vscode/
 /Linux/build/
 build/
 devel/
 .cache/
 .idea
+.catkin_tools
+logs/

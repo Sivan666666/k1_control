@@ -247,9 +247,13 @@ int main(int argc, char** argv) {
     // ---- 移动到初始位置 ----
     ROS_INFO("Moving to initial joint positions...");
     JointValue initial_jpos[2];
-    initial_jpos[0] = {-1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298}; // 左臂 (ID:0)
-    initial_jpos[1] = {1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290};   // 右臂 (ID:1)
-    
+    initial_jpos[0] = {1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290}; 
+    initial_jpos[1] = {-1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298}; 
+
+    // 将角度值转换为弧度
+    convertJointValueToRad(initial_jpos[0]);
+    convertJointValueToRad(initial_jpos[1]);
+
     // 测试的初始位置
     JointValue jpos[2];
     memset(&jpos,0,sizeof(jpos));
@@ -270,12 +274,8 @@ int main(int argc, char** argv) {
     jpos[1].jVal[6] = deg2rad(126.3);
 
 
-    // 将角度值转换为弧度
-    convertJointValueToRad(initial_jpos[0]);
-    convertJointValueToRad(initial_jpos[1]);
-
-    double jv[] = {deg2rad(50), deg2rad(50)};
-    double ja[] = {deg2rad(500), deg2rad(500)};
+    double jv[] = {deg2rad(10), deg2rad(10)};
+    double ja[] = {deg2rad(50), deg2rad(50)};
     MoveMode mode[] = {MoveMode::ABS, MoveMode::ABS};
     robot.robot_run_multi_movj(DUAL, mode, true, jpos, jv, ja);
     ROS_INFO("Initial position reached.");
