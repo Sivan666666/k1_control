@@ -1,4 +1,6 @@
 import os
+import sys
+import select
 import numpy as np
 import roboticstoolbox as rtb
 from spatialmath import SE3
@@ -39,7 +41,7 @@ def SE3_to_end_pose(T, order='XYZ'):
 
     参数:
         T: SE3变换矩阵
-        order: 欧拉角的旋转顺序，默认为 'ZYX' (Roll-Pitch-Yaw)
+        order: 欧拉角的旋转顺序，默认为 'XYZ' (Roll-Pitch-Yaw)
 
     返回:
         tuple: 包含位置 (x, y, z) 和欧拉角 (rx, ry, rz)，角度单位为度
@@ -57,56 +59,49 @@ def SE3_to_end_pose(T, order='XYZ'):
 
     return pos, eul
 
-# def SE3_to_end_pose(T):
-#     """
-#     将SE3变换矩阵转换为机械臂末端位姿格式(x,y,z,rx,ry,rz)
 
-#     参数:
-#         T: SE3变换矩阵
+def pose_to_se3(x, y, z, rx, ry, rz):
+    # 将角度从度转换为弧度
+    rx, ry, rz = np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(rz)
 
-#     返回:
-#         str: 格式为"x, y, z, rx, ry, rz"的字符串，角度单位为度
-#     """
-#     if not isinstance(T, SE3):
-#         raise ValueError("输入必须是SE3对象")
+    # 创建旋转矩阵
+    R = SE3.Rz(rz) * SE3.Ry(ry) * SE3.Rx(rx)
 
-#     # 获取位置(x,y,z)
-#     pos = T.t
+    # 创建齐次变换矩阵
+    T = SE3.Rt(R.R, [x, y, z])
 
-#     # 获取欧拉角(假设是ZYX顺序，即RPY)
-#     eul = T.eul(seq='XYZ', unit='deg')
+    return T
 
-#     return pos, eul
+def safe_input_with_rospy(prompt):
+    """
+    一个ROS安全的input()替代函数。
 
+    Args:
+        prompt (str): 显示给用户的提示信息。
 
-# def pose_to_se3(x, y, z, rx, ry, rz):
-#     # 将角度从度转换为弧度
-#     rx, ry, rz = np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(rz)
-
-#     # 创建旋转矩阵
-#     R = SE3.Rz(rz) * SE3.Ry(ry) * SE3.Rx(rx)
-
-#     # 创建齐次变换矩阵
-#     T = SE3.Rt(R.R, [x, y, z])
-
-#     return T
-
-# def get_pose_components(T):
-#     """
-#     从一个SE3对象中分解出位置(x, y, z)和RPY姿态(roll, pitch, yaw, 单位:度)。
-
-#     :param T: spatialmath.SE3 对象
-#     :return: 包含6个键值对的字典
-#     """
-#     if not isinstance(T, SE3):
-#         raise TypeError("输入必须是SE3对象")
-
-#     position = T.t
-#     rpy_angles = T.eul(unit='deg')  # 获取Roll, Pitch, Yaw角度
-#     return position, rpy_angles
+    Returns:
+        bool: 如果用户按了回车则返回 True, 如果被中断则返回 False。
+    """
+    rospy.loginfo(prompt)
+    
+    # 当ROS节点正常运行时，循环等待
+    while not rospy.is_shutdown():
+        # 使用select来检查标准输入(sys.stdin)是否可读，超时设置为0.1秒
+        # 这意味着它最多只会阻塞0.1秒
+        rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+        
+        # 如果sys.stdin在可读列表中，说明用户输入了内容 (按了回车)
+        if rlist:
+            # 读取输入行以清空缓冲区
+            sys.stdin.readline()
+            return True # 返回成功
+            
+    # 如果循环因为 rospy.is_shutdown() 变为 True 而退出
+    rospy.logwarn("操作在等待用户输入时被中断 (Ctrl+C)。")
+    return False # 返回失败/取消
 
 class K1DualArmController:
-    def __init__(self, urdf_path=None):
+    def __init__(self, urdf_path=None, enble_preview=True):
         """
         初始化K1双臂机器人控制器
 
@@ -153,6 +148,8 @@ class K1DualArmController:
         # self.right_ee_link = "right_gripper_base"
         self.left_ee_link = "lt"
         self.right_ee_link = "rt"
+        # self.left_ee_link = "lt"
+        # self.right_ee_link = "rt"
 
         # --- State and Synchronization ---
         self.qnow = np.zeros(self.robot.n)
@@ -186,36 +183,44 @@ class K1DualArmController:
         # 关节加速度限制 (rad/s^2)
         self.acceleration_limits = np.array([np.deg2rad(50)] * 18)
 
+        # visualization
+        self.enable_preview = enble_preview
+        if self.enable_preview:
+            rospy.loginfo("轨迹预览功能已开启。")
+        else:
+            rospy.loginfo("轨迹预览功能已关闭，适用于连接真机。")
+
     # ================================================================= #
     # ================         High-Level API Functions         ==================== #
     # ================================================================= #
-    def move_to_fixed_joint_target(self, q_target, velocity_scaling_factor=1.0,wait=True):
-        """
-        (API 1) Plans and moves to the specified target joint position.
-        """
-        print(f"\n[API] Moving to Joint Target (Speed: {velocity_scaling_factor * 100:.0f}%)")
-        q_target = np.array(q_target)
-        if q_target.size != self.robot.n:
-            print(f"Error: Target joint dimension should be {self.robot.n}, but received {q_target.size}.")
-            return
+    def grasp_from_table(self, q_start, velocity_scaling_factor=1.0, wait=True):
 
-        with self.state_lock:
-             q_current = self.qnow.copy()
+        T_current_left = controller.forward_kinematics(q_start, arm='left')
+        T_current_right = controller.forward_kinematics(q_start, arm='right')
+        current_left_pose, current_left_euler = SE3_to_end_pose(T_current_left)
+        current_right_pose, current_right_euler = SE3_to_end_pose(T_current_right)
+        print(f"当前左臂末端位姿: {current_left_pose}, 欧拉角: {current_left_euler}")
+        print(f"当前右臂末端位姿: {current_right_pose}, 欧拉角: {current_right_euler}")
 
-        # Create a path from the current point to the target point
-        waypoints = [q_current, q_target]
+        target_left_pose = current_left_pose.copy()
+        target_right_pose = current_right_pose.copy() 
+        target_left_pose[2]= 0.7
+        target_right_pose[2] = 0.7  # 设置目标高度为0.7米
+        target_left_euler = np.array([81, 26, 70])  
+        target_right_euler = np.array([81, -26, 110])  # 设置目标姿态
+        print(f"目标左臂末端位姿: {target_left_pose}, 欧拉角: {target_left_euler}")
+        print(f"目标右臂末端位姿: {target_right_pose}, 欧拉角: {target_right_euler}")
+        # 将目标位姿转换为SE3对象
+        T_target_left =  pose_to_se3(target_left_pose[0], target_left_pose[1], target_left_pose[2], 
+                                      target_left_euler[0], target_left_euler[1], target_left_euler[2])
+        T_target_right = pose_to_se3(target_right_pose[0], target_right_pose[1], target_right_pose[2],
+                                      target_right_euler[0], target_right_euler[1], target_right_euler[2])
+ 
 
-        # Plan trajectory
-        full_traj = self.plan_full_robot_trajectory(waypoints, velocity_scaling_factor)
-
-        if full_traj and self.split_and_store_trajectory(full_traj):
-            self.visualize_trajectory_ros(full_traj)  # <--- 在此可视化
-            rospy.loginfo("路径已发布供RViz预览。将在2秒后开始运动...")
-            rospy.sleep(2)
-            self.start_trajectory_execution()
-            if wait:
-                self.wait_for_trajectory_completion()
-            self.qnow = q_target  # 更新当前状态
+        # T_target_left = SE3(T_current_left.t[0], T_current_left.t[1], 0.7) * SE3.RPY([81, 26, 70], unit='deg')
+        # T_target_right = SE3(T_current_right.t[0], T_current_right.t[1], 0.7) * SE3.RPY([81, -26, 110], unit='deg')
+        # 调用move_to_cartesian_pose方法移动到目标位姿
+        self.move_to_cartesian_pose((T_target_right, T_target_left), 'both', velocity_scaling_factor, wait)
 
 
     def move_to_joint_target(self, q_target, velocity_scaling_factor=1.0,wait=True):
@@ -239,18 +244,26 @@ class K1DualArmController:
 
         # Plan trajectory
         full_traj = self.plan_full_robot_trajectory(waypoints, velocity_scaling_factor)
-        print('full_traj:',np.rad2deg( full_traj['position']))
+        rospy.loginfo(f"规划的轨迹长度: {len(full_traj['time'])} ")
+        # print('full_traj:',np.rad2deg( full_traj['position']))
 
         if full_traj and self.split_and_store_trajectory(full_traj):
-            self.visualize_trajectory_ros(full_traj)  # <--- 在此可视化
-            rospy.loginfo("路径已发布供RViz预览。将在2秒后开始运动...")
-            rospy.sleep(2)
-            input("按下回车键以确认并开始运动，或按 Ctrl+C 取消...")
+            # 可视化轨迹
+            self.visualize_trajectory_ros(full_traj)  
+            if self.enable_preview:
+                # 在RViz中预览关节轨迹
+                self.visualize_joint_trajectory(full_traj)
+
+            rospy.loginfo("路径已发布供RViz预览")
+            if not safe_input_with_rospy("路径已预览，按回车键开始运动，或按 Ctrl+C 取消..."):
+                rospy.loginfo("运动被取消，任务中止。")
+                return # 如果用户按了Ctrl+C，则干净地退出此函数
             print("开始运动！")
             self.start_trajectory_execution()
             if wait:
                 self.wait_for_trajectory_completion()
-            self.qnow = q_target  # 更新当前状态
+
+            self.qnow = q_target 
 
     def move_to_cartesian_pose(self, T_desired, arm, velocity_scaling_factor=1.0,wait=True,control_orientation=True):
         """
@@ -306,9 +319,9 @@ class K1DualArmController:
             return
 
         # Move the whole robot to the new unified joint state
-        self.move_to_joint_target(q_target_full, velocity_scaling_factor)
+        self.move_to_joint_target(q_target_full, velocity_scaling_factor, wait=wait)
     
-    
+    # TODO:It has problem, need to be fixed 
     def move_to_cartesian_pose_robust(self, T_desired, arm, velocity_scaling_factor=1.0, wait=True):
         """
         [更智能的API] 移动到笛卡尔位姿。如果完整位姿不可达，则自动尝试只控制位置。
@@ -406,18 +419,79 @@ class K1DualArmController:
             pose_l.pose.position.x, pose_l.pose.position.y, pose_l.pose.position.z = T_left.t
             pose_l.pose.orientation.w = 1.0 # TODO： simple orientation
             left_path_msg.poses.append(pose_l)
-            print(f"左臂末端位姿: {SE3_to_end_pose(T_left)}")
+            # print(f"左臂末端位姿: {SE3_to_end_pose(T_left)}")
 
             T_right = self.forward_kinematics(q_18dof, 'right')
             pose_r = PoseStamped(header=right_path_msg.header)
             pose_r.pose.position.x, pose_r.pose.position.y, pose_r.pose.position.z = T_right.t
             pose_r.pose.orientation.w = 1.0
             right_path_msg.poses.append(pose_r)
-            print(f"右臂末端位姿: {SE3_to_end_pose(T_right)}")
+            # print(f"右臂末端位姿: {SE3_to_end_pose(T_right)}")
 
         self.vis_pub_left.publish(left_path_msg)
         self.vis_pub_right.publish(right_path_msg)
         rospy.loginfo("可视化路径已发布。请在RViz中添加Path显示并订阅该话题。")
+    
+    def visualize_joint_trajectory(self, trajectory, playback_speed=1.0):
+        """
+        在RViz中将规划好的关节轨迹“播放”一遍，以动画形式预览。
+        在播放前会先将模型设置到轨迹的起始点。
+        
+        Args:
+            trajectory (dict): 包含 'time' 和 'position' 的轨迹字典。
+            playback_speed (float): 播放速度，1.0为正常速度。
+        """
+        if trajectory is None or len(trajectory['position']) < 2:
+            rospy.logwarn("轨迹无效或点数过少，无法进行预览。")
+            return
+
+        # 创建一个临时的Publisher，专门用于离线动画预览
+        preview_pub = rospy.Publisher('/joint_states', JointState, queue_size=10)
+        
+        # ---预发布起点，让RViz模型瞬移到正确位置 ---
+        rospy.loginfo("正在设置RViz模型到轨迹起点...")
+        start_state_msg = JointState()
+        start_state_msg.header.stamp = rospy.Time.now()
+        start_state_msg.name = ALL_JOINT_NAMES # 使用全局/类级别的关节名列表
+        start_state_msg.position = trajectory['position'][0] # 获取轨迹的第一个点
+        
+        # 连续发布几次以确保RViz收到
+        for _ in range(5):
+            start_state_msg.header.stamp = rospy.Time.now()
+            preview_pub.publish(start_state_msg)
+            rospy.sleep(0.1)
+        
+        rospy.loginfo("模型已就位。将在0.5秒后开始动画预览...")
+        rospy.sleep(0.5) # 短暂延时，确保RViz有时间更新模型外观
+        
+        # --- 开始播放动画轨迹 ---
+        rospy.loginfo(f"开始关节轨迹预览 (播放速度: {playback_speed}x)...")
+        start_time = rospy.Time.now()
+        rate = rospy.Rate(100) # 以100Hz的频率更新动画
+
+        total_duration = trajectory['time'][-1]
+        # 只有在轨迹有实际时长的情况下才播放
+        if total_duration > 1e-4: # 避免时长为0的轨迹
+            while not rospy.is_shutdown():
+                elapsed_time = (rospy.Time.now() - start_time).to_sec() * playback_speed
+                
+                if elapsed_time > total_duration:
+                    break # 播放完毕
+
+                # 查找当前时间对应的轨迹点索引
+                idx = np.searchsorted(trajectory['time'], elapsed_time, side='left')
+                idx = min(idx, len(trajectory['position']) - 1)
+
+                # 创建并发布JointState消息
+                js_msg = JointState()
+                js_msg.header.stamp = rospy.Time.now()
+                js_msg.name = ALL_JOINT_NAMES
+                js_msg.position = trajectory['position'][idx]
+                preview_pub.publish(js_msg)
+                
+                rate.sleep()
+
+        rospy.loginfo("轨迹预览结束。")
 
     # ================================================================= #
     # ================         ROS Interfacing        ================ #
@@ -466,7 +540,6 @@ class K1DualArmController:
             right_idx = left_idx  # 因为时间轴是统一的
             time_from_start_l = rospy.Duration(elapsed_time)
             time_from_start_r = rospy.Duration(elapsed_time)
-        print(left_idx)
         # 创建并发布左臂消息
         header = Header(stamp=rospy.Time.now())
         left_msg = JointTrajectory(joint_names=self.left_arm_joint_names, header=header)
@@ -476,10 +549,10 @@ class K1DualArmController:
         point_l.accelerations = self.left_trajectory['acceleration'][left_idx]
         point_l.time_from_start = time_from_start_l
         left_msg.points.append(point_l)
-        print(f"发布右LEFT臂轨迹点: {np.array(point_l.positions)* 180 / np.pi}")
-        print(f"发布left轨迹点: {left_msg}")
+        # print(f"发布右LEFT臂轨迹点: {np.array(point_l.positions)* 180 / np.pi}")
+        # print(f"发布left轨迹点: {left_msg}")
         self.left_arm_pub.publish(left_msg)
-        print(right_idx)
+        # print(right_idx)
         # 创建并发布右臂消息
         right_msg = JointTrajectory(joint_names=self.right_arm_joint_names, header=header)
         point_r = JointTrajectoryPoint()
@@ -488,8 +561,8 @@ class K1DualArmController:
         point_r.accelerations = self.right_trajectory['acceleration'][right_idx]
         point_r.time_from_start = time_from_start_r
         right_msg.points.append(point_r)
-        print(f"发布右臂轨迹点: {np.array(point_r.positions)* 180 / np.pi}")
-        print(f"发布RIGHT轨迹点: {right_msg}")
+        # print(f"发布右臂轨迹点: {np.array(point_r.positions)* 180 / np.pi}")
+        # print(f"发布RIGHT轨迹点: {right_msg}")
         self.right_arm_pub.publish(right_msg)
 
     def _joint_state_callback(self, msg):
@@ -627,13 +700,52 @@ class K1DualArmController:
             print(f"关节{i}: {val:7.2f}°", end=' | ')
         print()  # 换行
 
+    def _sanitize_joint_state(self, q_raw):
+        """
+        清理关节状态，确保其在URDF限制内，并在发生裁剪时打印警告。
+        """
+        # 1. 使用np.clip进行裁剪，这会返回一个新的数组
+        q_clipped = np.clip(q_raw, self.joint_limits[0, :], self.joint_limits[1, :])
+
+        # 2. 检查裁剪后的数组是否与原始数组有任何不同
+        # np.any() 会高效地检查两个数组中是否有任何一个元素不相等
+        if np.any(q_raw != q_clipped):
+            
+            # 3. 如果有不同，说明发生了裁剪，我们来构造一条详细的警告信息
+            warning_message = "机器人反馈关节值超出URDF限制, 已自动裁剪. 详情如下:"
+            
+            # 找到所有被裁剪的关节的索引
+            clipped_indices = np.where(q_raw != q_clipped)[0]
+            
+            details = []
+            for idx in clipped_indices:
+                joint_name = self.ALL_JOINT_NAMES[idx]
+                original_val_deg = np.rad2deg(q_raw[idx])
+                clipped_val_deg = np.rad2deg(q_clipped[idx])
+                limit_min_deg = np.rad2deg(self.joint_limits[0, idx])
+                limit_max_deg = np.rad2deg(self.joint_limits[1, idx])
+                
+                detail_str = (
+                    f"  - 关节 '{joint_name}' (索引 {idx}): "
+                    f"反馈值 {original_val_deg:.3f}°, "
+                    f"URDF限制 [{limit_min_deg:.3f}°, {limit_max_deg:.3f}°], "
+                    f"已裁剪为 {clipped_val_deg:.3f}°"
+                )
+                details.append(detail_str)
+
+            # 4. 使用 throttle 模式发布警告，避免刷屏 (每10秒最多报一次)
+            rospy.logwarn_throttle(10.0, f"{warning_message}\n" + "\n".join(details))
+        
+        # 5. 返回被清理过的、保证安全的值
+        return q_clipped
 
 if __name__ == "__main__":
     # 创建控制器实例
     try:
-        controller = K1DualArmController()
+        controller = K1DualArmController(enble_preview=True)
         print("机器人模型加载成功!")
 
+        # 初始位置
         q_home  = np.deg2rad(np.array([
             -1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298, # 右
             0, 0,
@@ -641,41 +753,54 @@ if __name__ == "__main__":
             0, 0
         ]))
 
-        # rospy.sleep(10)
-      
+        # 打印初始末端位姿
         T = controller.forward_kinematics(q_home, arm = 'left')
-        print(SE3_to_end_pose(T))
-        # ================================================================= #
-        # ================         Demo1        ================ #
-        # ================================================================= #
-        rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
-        q_init_from_home = controller.qnow.copy()
-        controller.move_to_joint_target(q_init_from_home, velocity_scaling_factor=1.0, wait=True)
-        rospy.loginfo("Already move to initial point ,sleep 3s")
-        time.sleep(3)
-
+        print("初始左臂末端位姿:", SE3_to_end_pose(T))
+        T = controller.forward_kinematics(q_home, arm = 'right')
+        print("初始右臂末端位姿:", SE3_to_end_pose(T))
         
-        # ================================================================= #
-        # ================         Demo2        ================ #
-        # ================================================================= #
         if not rospy.is_shutdown():
-            rospy.loginfo("\n======== Demo: 双臂移动  ========")
-            # 获取当前位姿
-            current_pose_left = controller.forward_kinematics(controller.qnow, arm='left')
-            current_pose_right = controller.forward_kinematics(controller.qnow, arm='right')
+            # ================================================================= #
+            # ================         Demo1        ================ #
+            # ================================================================= #
+            rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
+            q_init_from_home = controller.qnow.copy()
+            print(SE3_to_end_pose(T))
+            controller.move_to_joint_target(q_init_from_home, velocity_scaling_factor=1.0, wait=True)
+            rospy.loginfo("Already move to initial point")
 
-            # 定义一个共同的目标偏移量
-            target_offset = SE3.Tx(0.15) * SE3.Tz(0.20)
-            target_pose_left = target_offset * current_pose_left
-            target_pose_right = target_offset * current_pose_right
+            # ================================================================= #
+            # ================         Demo2        ================ #
+            # ================================================================= #
+            rospy.loginfo("\n======== Demo: 抓取  ========")
+            grasp_from_table = controller.grasp_from_table(q_init_from_home, velocity_scaling_factor=0.3, wait=True)
+            rospy.loginfo("已完成抓取动作")
+            
+            # ================================================================= #
+            # ================         Demo3        ================ #
+            # ================================================================= #
+            # rospy.loginfo("\n======== Demo: 双臂移动  ========")
+            # # 获取当前位姿
+            # current_pose_left = controller.forward_kinematics(controller.qnow, arm='left')
+            # current_pose_right = controller.forward_kinematics(controller.qnow, arm='right')
 
-            # 使用 'both' 模式，统一规划和执行
-            controller.move_to_cartesian_pose(
-                (target_pose_right, target_pose_left),
-                arm='both',
-                velocity_scaling_factor=0.5,
-                wait=True
-            )
+            # # 定义一个共同的目标偏移量
+            # target_offset = SE3.Tx(0.15) * SE3.Tz(0.20)
+            # target_pose_left = target_offset * current_pose_left
+            # target_pose_right = target_offset * current_pose_right
+
+            # print(f"当前左臂末端位姿: {SE3_to_end_pose(current_pose_left)}")
+            # print(f"当前右臂末端位姿: {SE3_to_end_pose(current_pose_right)}")
+            # print(f"目标左臂末端位姿: {SE3_to_end_pose(target_pose_left)}")
+            # print(f"目标右臂末端位姿: {SE3_to_end_pose(target_pose_right)}")
+
+            # # 使用 'both' 模式，统一规划和执行
+            # controller.move_to_cartesian_pose(
+            #     (target_pose_right, target_pose_left),
+            #     arm='both',
+            #     velocity_scaling_factor=0.5,
+            #     wait=True
+            # )
 
         rospy.loginfo("\n演示全部完成。")
 
@@ -693,8 +818,6 @@ if __name__ == "__main__":
         # # control loop
         # controller.run_fling_with_toppra()
 
-        # 添加rospy.spin()保持节点运行
-        rospy.spin()
 
 
     except rospy.ROSInterruptException:
