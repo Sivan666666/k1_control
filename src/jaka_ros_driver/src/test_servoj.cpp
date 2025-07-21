@@ -243,7 +243,13 @@ int main(int argc, char** argv) {
     robot.enable_robot();
     std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待机器人稳定
     ROS_INFO("Robot enabled.");
-
+    // robot.set_full_dh_flag(1);
+    // robot.disable_robot();
+    // robot.power_off();
+    // std::this_thread::sleep_for(std::chrono::seconds(5)); // 等待机器人稳定
+    // robot.power_on();
+    // robot.enable_robot();
+    // std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待机器人稳定
     // ---- 移动到初始位置 ----
     ROS_INFO("Moving to initial joint positions...");
     JointValue initial_jpos[2];
@@ -272,25 +278,47 @@ int main(int argc, char** argv) {
     jpos[1].jVal[4] = deg2rad(-50.5);
     jpos[1].jVal[5] = deg2rad(5.6);
     jpos[1].jVal[6] = deg2rad(126.3);
+    // grasp init point
+    jpos[0].jVal[0] = deg2rad(-21.3);
+    jpos[0].jVal[1] = deg2rad(-51.7);
+    jpos[0].jVal[2] = deg2rad(65.7);
+    jpos[0].jVal[3] = deg2rad(-134.2);
+    jpos[0].jVal[4] = deg2rad(121.25);
+    jpos[0].jVal[5] = deg2rad(-40.5);
+    jpos[0].jVal[6] = deg2rad(-136.6);
 
-
+    jpos[1].jVal[0] = deg2rad(21.3);
+    jpos[1].jVal[1] = deg2rad(-51.7);
+    jpos[1].jVal[2] = deg2rad(-65.7);
+    jpos[1].jVal[3] = deg2rad(-134.2);
+    jpos[1].jVal[4] = deg2rad(-121.25);
+    jpos[1].jVal[5] = deg2rad(40.5);
+    jpos[1].jVal[6] = deg2rad(136.6);
     double jv[] = {deg2rad(10), deg2rad(10)};
     double ja[] = {deg2rad(50), deg2rad(50)};
     MoveMode mode[] = {MoveMode::ABS, MoveMode::ABS};
     robot.robot_run_multi_movj(DUAL, mode, true, jpos, jv, ja);
     ROS_INFO("Initial position reached.");
-
+    CartesianPose cpos[2];
+    robot.kine_forward(0,&initial_jpos[0],&cpos[0]);
+    robot.kine_forward(1,&initial_jpos[1],&cpos[1]);
+    ROS_INFO("trans: left[%.3f, %.3f, %.3f], right[%.3f, %.3f, %.3f]", 
+        cpos[0].tran.x, cpos[0].tran.y, cpos[0].tran.z,
+        cpos[1].tran.x, cpos[1].tran.y, cpos[1].tran.z);
+    ROS_INFO("rotation: left[%.3f, %.3f, %.3f], right[%.3f, %.3f, %.3f]", 
+        cpos[0].rpy.rx, cpos[0].rpy.ry, cpos[0].rpy.rz,
+        cpos[1].rpy.rx, cpos[1].rpy.ry, cpos[1].rpy.rz);
     // ---- 准备伺服模式 ----
     // 使用初始位置初始化目标关节值
     {
         std::lock_guard<std::mutex> lock(robot_data_mutex);
-        target_left_joint = initial_jpos[0];
-        target_right_joint = initial_jpos[1];
+        target_left_joint = jpos[0];
+        target_right_joint = jpos[1];
     }
     
     // 启用伺服模式
     ROS_INFO("Enabling servo mode for both arms...");
-    robot.servo_move_use_joint_NLF(90, 180, 680);
+    robot.servo_move_use_joint_NLF(80, 120, 120);
     int enable0 = robot.servo_move_enable(1, 0); // 开启左臂伺服
     int enable1 = robot.servo_move_enable(1, 1); // 开启右臂伺服
 

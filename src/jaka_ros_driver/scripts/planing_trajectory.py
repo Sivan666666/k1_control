@@ -114,6 +114,7 @@ class K1DualArmController:
             raise FileNotFoundError(f"URDF文件未找到: {urdf_path}")
         self.robot = rtb.ERobot.URDF(file_path=urdf_path)
         print(f"Robot model loaded from: {urdf_path},found {self.robot.n} DoFs.")
+        #print(self.robot)
 
 
         # --- ROS Publishers/Subscribers ---
@@ -752,6 +753,8 @@ if __name__ == "__main__":
             1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290,# 左
             0, 0
         ]))
+        rospy.sleep(1)
+        mode = "grasp"
 
         # 打印初始末端位姿
         T = controller.forward_kinematics(q_home, arm = 'left')
@@ -763,60 +766,107 @@ if __name__ == "__main__":
             # ================================================================= #
             # ================         Demo1        ================ #
             # ================================================================= #
-            rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
-            q_init_from_home = controller.qnow.copy()
-            print(SE3_to_end_pose(T))
-            controller.move_to_joint_target(q_init_from_home, velocity_scaling_factor=1.0, wait=True)
-            rospy.loginfo("Already move to initial point")
+            # rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
+            # # q_init_from_home = controller.qnow.copy()
+            # # print(SE3_to_end_pose(T))
+            # controller.move_to_joint_target(q_home, velocity_scaling_factor=0.3, wait=True)
+            # rospy.loginfo("Already move to initial point")
 
             # ================================================================= #
             # ================         Demo2        ================ #
             # ================================================================= #
-            rospy.loginfo("\n======== Demo: 抓取  ========")
-            grasp_from_table = controller.grasp_from_table(q_init_from_home, velocity_scaling_factor=0.3, wait=True)
-            rospy.loginfo("已完成抓取动作")
+            # rospy.loginfo("\n======== Demo: 抓取  ========")
+            # grasp_from_table = controller.grasp_from_table(q_home, velocity_scaling_factor=0.3, wait=True)
+            # rospy.loginfo("已完成抓取动作")
             
             # ================================================================= #
             # ================         Demo3        ================ #
             # ================================================================= #
             # rospy.loginfo("\n======== Demo: 双臂移动  ========")
+            for _ in range(5):  # 多次发布确保接收
+                controller.gripper_pub.publish(1000)
+                controller.gripper_pub2.publish(1000)
+                rospy.loginfo("发送夹爪初始化指令: 1000")
+                rospy.sleep(0.1)
             # # 获取当前位姿
-            # current_pose_left = controller.forward_kinematics(controller.qnow, arm='left')
-            # current_pose_right = controller.forward_kinematics(controller.qnow, arm='right')
+            if mode == "grasp":
+                # 定义左臂和右臂的轨迹
+                left_motion = [
+                    pose_to_se3(0.2234, 0.2645, -0.0628, 176.8, 0.0, 35.4),
+                    pose_to_se3(0.224, 0.2599, -0.1685,  179.05, 10.455, 73.485),
+                    pose_to_se3(0.25, 0.2645, 0.05,  176.8, 0.0, 35.4),
+                    pose_to_se3(0.25, 0.2645, 0.10,  176.8, 0.0, 35.4),
+                    pose_to_se3(0.25, 0.2645, 0.20,  176.8, 0.0, 35.4),
+                    pose_to_se3(0.3, 0.2645, 0.66, 117.7, -50.5, 65.7)
+                ]
 
-            # # 定义一个共同的目标偏移量
-            # target_offset = SE3.Tx(0.15) * SE3.Tz(0.20)
-            # target_pose_left = target_offset * current_pose_left
-            # target_pose_right = target_offset * current_pose_right
+                right_motion = [
+                    pose_to_se3(0.2234, -0.2645, -0.0628, 176.8, 0.0, 144.6),
+                    pose_to_se3(0.224, -0.2599, -0.1685,  179.05, -10.455, 180-73.485),
+                    pose_to_se3(0.25, -0.2645, 0.05, 176.8, 0.0, 144.6),
+                    pose_to_se3(0.25, -0.2645, 0.10, 176.8, 0.0, 144.6),
+                    pose_to_se3(0.25, -0.2645, 0.20, 176.8, 0.0, 144.6),
+                    pose_to_se3(0.3, -0.2645, 0.66, 117.7, 50.5, 114.3)
+                ]
+            elif mode == "fling":
+                # 定义左臂和右臂的轨迹
+                left_motion = [
+                    pose_to_se3(0.3, 0.28, 0.15, 174, 12, 88),
+                    pose_to_se3(0.43, 0.28, 0.4, 128, 14, 62),
+                    pose_to_se3(0.55, 0.3, 0.63, 80, -26, 70),
+                    pose_to_se3(0.43, 0.28, 0.4, 128, 14, 62),
+                    pose_to_se3(0.3, 0.28, 0.15, 174, 12, 88)
+                ]
 
-            # print(f"当前左臂末端位姿: {SE3_to_end_pose(current_pose_left)}")
-            # print(f"当前右臂末端位姿: {SE3_to_end_pose(current_pose_right)}")
-            # print(f"目标左臂末端位姿: {SE3_to_end_pose(target_pose_left)}")
-            # print(f"目标右臂末端位姿: {SE3_to_end_pose(target_pose_right)}")
+                right_motion = [
+                    pose_to_se3(0.3, -0.28, 0.15, 174, -12, 92),
+                    pose_to_se3(0.43, -0.28, 0.4, 128, -14, 118),
+                    pose_to_se3(0.55, -0.3, 0.63, 80, 26, 110),
+                    pose_to_se3(0.43, -0.28, 0.4, 128, -14, 118),
+                    pose_to_se3(0.35, -0.28, 0.15, 174, -12, 92)
+                ]
+            elif mode == "fold":
+                # 定义左臂和右臂的轨迹
+                left_motion = [
+                    pose_to_se3(0.3, 0.28, 0.0, 174, 12, 88),
+                    pose_to_se3(0.55, 0.28, 0.0, 174, 12, 88),
+                    pose_to_se3(0.55, 0.28, -0.10, 174, 12, 88)
+                ]
 
-            # # 使用 'both' 模式，统一规划和执行
-            # controller.move_to_cartesian_pose(
-            #     (target_pose_right, target_pose_left),
-            #     arm='both',
-            #     velocity_scaling_factor=0.5,
-            #     wait=True
-            # )
+                right_motion = [
+                    pose_to_se3(0.3, -0.28, 0.0, 174, -12, 92),
+                    pose_to_se3(0.55, -0.28, 0.0, 174, -12, 92),
+                    pose_to_se3(0.55, -0.28, -0.10, 174, -12, 92)
+                ]
+
+            # 遍历轨迹点，依次移动
+            for i, (left_pose, right_pose) in enumerate(zip(left_motion, right_motion)):
+                # 在第二个点执行结束后，发布夹抓闭合指令
+                if i == 2:  # 第二个点的索引为1
+                    rospy.loginfo("到达第二个轨迹点，发布夹抓闭合指令...")
+                    for _ in range(5):  # 多次发布确保接收
+                        controller.gripper_pub.publish(0)
+                        controller.gripper_pub2.publish(0)
+                        rospy.loginfo("发送夹爪初始化指令: 0")
+                        rospy.sleep(0.1)
+                    # controller.gripper_pub.publish(0)  # 发布左夹抓闭合指令
+                    # controller.gripper_pub2.publish(0)  # 发布右夹抓闭合指令
+                    rospy.sleep(5)  # 等待夹抓动作完成
+
+        
+                rospy.loginfo(f"移动到轨迹点 {i + 1}/{len(left_motion)}")
+
+                # 使用 'both' 模式，统一规划和执行
+                controller.move_to_cartesian_pose(
+                    (right_pose, left_pose),
+                    arm='both',
+                    velocity_scaling_factor=0.5,
+                    wait=True
+                )
+                
+            rospy.loginfo("\n轨迹运动完成。")
 
         rospy.loginfo("\n演示全部完成。")
-
-        # T = controller.forward_kinematics(jVal, 'left')
-        # print("T", T)
-        # print(SE3_to_end_pose(T))
-        # init open gripper
-        # # 可靠初始化夹爪
-        # rospy.sleep(1)  # 等待Publisher建立连接
-        # for _ in range(5):  # 多次发布确保接收
-        #     controller.gripper_pub.publish(1000)
-        #     controller.gripper_pub2.publish(1000)
-        #     rospy.loginfo("发送夹爪初始化指令: 1000 (全开)")
-        #     rospy.sleep(0.1)
-        # # control loop
-        # controller.run_fling_with_toppra()
 
 
 
