@@ -20,7 +20,7 @@ from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Header
 import threading
 from sensor_msgs.msg import JointState
-
+from loguru import logger
 
 try:
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -72,6 +72,34 @@ def pose_to_se3(x, y, z, rx, ry, rz):
 
     return T
 
+def print_waypoints_info(waypoints, label):
+    print(f"--- {label} ---")
+    for i, (T_left, T_right) in enumerate(waypoints):
+        pos_left, euler_left = SE3_to_end_pose(T_left)
+        pos_right, euler_right = SE3_to_end_pose(T_right)
+        print(f"Waypoint {i + 1}:")
+        print(f"  左臂 - 位置: {pos_left}, 欧拉角: {euler_left}")
+        print(f"  右臂 - 位置: {pos_right}, 欧拉角: {euler_right}")
+    print("--------------------")
+
+def interpolate_cartesian_path(T_start, T_end, num_points):
+    """
+    在两个SE3位姿之间进行平滑的笛卡る空间插值。
+
+    Args:
+        T_start (SE3): 起始位姿。
+        T_end (SE3): 结束位姿。
+        num_points (int): 需要插入的中间点数量。
+
+    Returns:
+        list: 一个包含从起点到终点所有SE3位姿的列表。
+    """
+    if num_points < 2:
+        return [T_start, T_end]
+    # np.linspace(0, 1, num_points) 会生成 [0.0, ..., 1.0] 的num_points个插值比例
+    return [T_start.interp(T_end, s) for s in np.linspace(0, 1, num_points)]
+
+
 def safe_input_with_rospy(prompt):
     """
     一个ROS安全的input()替代函数。
@@ -109,12 +137,14 @@ class K1DualArmController:
             urdf_path: URDF文件路径，如果为None则尝试默认路径
         """
         if urdf_path is None:
-            urdf_path = os.path.join(PROJECT_ROOT, "scripts", 'model/K1/urdf/k1_pgc_j4_limit.urdf')
+            # urdf_path = os.path.join(PROJECT_ROOT, "scripts", 'model/K1/urdf/k1_pgc_j4_limit.urdf')
+            urdf_path = os.path.join(PROJECT_ROOT, "scripts", 'model/K1/urdf/k1_pgc_revise_copy.urdf')
         if not os.path.exists(urdf_path):
             raise FileNotFoundError(f"URDF文件未找到: {urdf_path}")
         self.robot = rtb.ERobot.URDF(file_path=urdf_path)
         print(f"Robot model loaded from: {urdf_path},found {self.robot.n} DoFs.")
-        #print(self.robot)
+        robot = rtb.ERobot.URDF(file_path=urdf_path)
+        # print(robot)
 
 
         # --- ROS Publishers/Subscribers ---
@@ -147,10 +177,10 @@ class K1DualArmController:
         self.position_sequence = [0, 500, 1000, 300]
 
         # self.right_ee_link = "right_gripper_base"
+        # self.left_ee_link = "left_gripper_adapter"
+        # self.right_ee_link = "right_gripper_adapter"
         self.left_ee_link = "lt"
         self.right_ee_link = "rt"
-        # self.left_ee_link = "lt"
-        # self.right_ee_link = "rt"
 
         # --- State and Synchronization ---
         self.qnow = np.zeros(self.robot.n)
@@ -190,12 +220,127 @@ class K1DualArmController:
             rospy.loginfo("轨迹预览功能已开启。")
         else:
             rospy.loginfo("轨迹预览功能已关闭，适用于连接真机。")
-
+    
     # ================================================================= #
-    # ================         High-Level API Functions         ==================== #
+    # ================        Task Functions         ==================== #
     # ================================================================= #
-    def grasp_from_table(self, q_start, velocity_scaling_factor=1.0, wait=True):
 
+    def generic_pick_task(self, target, mode='pose', approach_height=0.16, lift_height=0.82, 
+                        velocity_scaling_factor=0.5, wait=True):
+        """
+        执行一个通用的双臂从上方抓取并抬起的任务。
+
+        Args:
+            target: 目标抓取点。
+                    - 如果 mode='pose', target 是一个元组 (T_grasp_right, T_grasp_left)。
+                    - 如果 mode='joint', target 是一个18-DOF的关节角度数组 q_grasp。
+            mode (str): 'pose' 或 'joint'，定义了target参数的类型。
+            approach_height (float): 从抓取点上方多高处开始接近（米）。
+            lift_height (float): 抓取后向上抬起的高度（米）。
+        """
+        rospy.loginfo(f"--- 开始执行通用抓取任务 (模式: {mode}) ---")
+
+        # 预备点姿态
+        EULER_APPROACH_LIFT_LEFT = np.array([176.8, 0.0, 35.4])
+        EULER_APPROACH_LIFT_RIGHT = np.array([176.8, 0.0, 144.6])
+
+        # 抬高点的姿态
+        EULER_FINAL_LIFT_LEFT = np.array([117.7, -50.5, 65.7])
+        EULER_FINAL_LIFT_RIGHT = np.array([117.7, 50.5, 114.3])
+
+        # --- 1. 输入处理：无论输入是什么，都统一计算出目标SE3位姿 ---
+        if mode == 'pose':
+            if not (isinstance(target, (list, tuple)) and len(target) == 2):
+                rospy.logerr("错误: mode='pose'时, target必须是 (T_grasp_right, T_grasp_left) 元组。")
+                return False
+            T_grasp_left, T_grasp_right = target
+        elif mode == 'joint':
+            if not (isinstance(target, np.ndarray) and target.size == self.robot.n):
+                rospy.logerr(f"错误: mode='joint'时, target必须是 {self.robot.n}-DOF 的Numpy数组。")
+                return False
+            q_grasp = target
+            rospy.loginfo("正在从目标关节角计算末端位姿...")
+            T_grasp_right = self.forward_kinematics(q_grasp, 'right')
+            T_grasp_left = self.forward_kinematics(q_grasp, 'left')
+        else:
+            rospy.logerr(f"错误: 无效的模式 '{mode}'。请选择 'pose' 或 'joint'。")
+            return False
+            
+        # --- 2. 路径点生成：根据目标抓取位姿，自动计算所有中间点 ---
+        rospy.loginfo("正在根据目标抓取位姿自动生成路径点...")
+
+
+        pos_grasp_left = T_grasp_left.t
+        pos_grasp_right = T_grasp_right.t
+        pos_left, pos_orentation_left = SE3_to_end_pose(T_grasp_left)
+        pos_right, pos_orentation_right = SE3_to_end_pose(T_grasp_right)
+        print(f"左臂抓取点位置: {pos_left}, 欧拉角: {pos_orentation_left}")
+        print(f"右臂抓取点位置: {pos_right}, 欧拉角: {pos_orentation_right}")
+        
+        # 准备点：
+        T1_home_left = pose_to_se3(pos_grasp_left[0], pos_grasp_left[1], pos_grasp_left[2] + approach_height, 
+                          EULER_APPROACH_LIFT_LEFT[0], EULER_APPROACH_LIFT_LEFT[1], EULER_APPROACH_LIFT_LEFT[2])
+        T1_home_right = pose_to_se3(pos_grasp_right[0], pos_grasp_right[1], pos_grasp_right[2] + approach_height, 
+                            EULER_APPROACH_LIFT_RIGHT[0], EULER_APPROACH_LIFT_RIGHT[1], EULER_APPROACH_LIFT_RIGHT[2])
+        print(f"准备点左臂: {T1_home_left.t}, 右臂: {T1_home_right.t}")
+        
+        # 抓取上升：
+        T1_lift_left = pose_to_se3(pos_grasp_left[0]+0.03, pos_grasp_left[1], pos_grasp_left[2] + approach_height + 0.05, 
+                         EULER_APPROACH_LIFT_LEFT[0], EULER_APPROACH_LIFT_LEFT[1], EULER_APPROACH_LIFT_LEFT[2])
+        T1_lift_right = pose_to_se3(pos_grasp_right[0]+0.03, pos_grasp_right[1], pos_grasp_right[2] + approach_height+ 0.05, 
+                           EULER_APPROACH_LIFT_RIGHT[0], EULER_APPROACH_LIFT_RIGHT[1], EULER_APPROACH_LIFT_RIGHT[2])
+        
+        T2_lift_left = pose_to_se3(pos_grasp_left[0]+0.03, pos_grasp_left[1], pos_grasp_left[2] + approach_height + 0.15, 
+                         EULER_APPROACH_LIFT_LEFT[0], EULER_APPROACH_LIFT_LEFT[1], EULER_APPROACH_LIFT_LEFT[2])
+        T2_lift_right = pose_to_se3(pos_grasp_right[0]+0.03, pos_grasp_right[1], pos_grasp_right[2] + approach_height+ 0.15, 
+                           EULER_APPROACH_LIFT_RIGHT[0], EULER_APPROACH_LIFT_RIGHT[1], EULER_APPROACH_LIFT_RIGHT[2])
+        
+        T3_lift_left = pose_to_se3(pos_grasp_left[0]+0.03, pos_grasp_left[1], pos_grasp_left[2] + approach_height + 0.15, 
+                         EULER_APPROACH_LIFT_LEFT[0], EULER_APPROACH_LIFT_LEFT[1], EULER_APPROACH_LIFT_LEFT[2])
+        T3_lift_right = pose_to_se3(pos_grasp_right[0]+0.03, pos_grasp_right[1], pos_grasp_right[2] + approach_height+ 0.15, 
+                           EULER_APPROACH_LIFT_RIGHT[0], EULER_APPROACH_LIFT_RIGHT[1], EULER_APPROACH_LIFT_RIGHT[2])
+
+        
+        # 最高点
+        T_final_lift_left = pose_to_se3(pos_grasp_left[0], pos_grasp_left[1], pos_grasp_left[2] + lift_height, 
+                         EULER_FINAL_LIFT_LEFT[0], EULER_FINAL_LIFT_LEFT[1], EULER_FINAL_LIFT_LEFT[2])
+        T_final_lift_right = pose_to_se3(pos_grasp_right[0], pos_grasp_right[1], pos_grasp_right[2] + lift_height, 
+                           EULER_FINAL_LIFT_RIGHT[0], EULER_FINAL_LIFT_RIGHT[1], EULER_FINAL_LIFT_RIGHT[2])
+
+        approach_waypoints = [(T1_home_left,T1_home_right),(T_grasp_left, T_grasp_right)]
+        print_waypoints_info(approach_waypoints, "Approach Waypoints")
+
+
+        lift_waypoints = [(T_grasp_left, T_grasp_right),(T1_lift_left, T1_lift_right), (T2_lift_left, T2_lift_right), (T3_lift_left, T3_lift_right), 
+                          (T_final_lift_left, T_final_lift_right)]
+
+        
+        print_waypoints_info(lift_waypoints, "Lift Waypoints")
+
+        # pose_to_se3(0.2234, 0.2645, -0.0628, 176.8, 0.0, 35.4),
+        # pose_to_se3(0.224, 0.2599, -0.1685,  179.05, 10.455, 73.485),
+        # pose_to_se3(0.25, 0.2645, 0.05,  176.8, 0.0, 35.4),
+        # pose_to_se3(0.25, 0.2645, 0.10,  176.8, 0.0, 35.4),
+        # pose_to_se3(0.25, 0.2645, 0.20,  176.8, 0.0, 35.4),
+        # pose_to_se3(0.3, 0.2645, 0.66, 117.7, -50.5, 65.7)
+        
+        # --- 3. 任务序列执行 ---
+        rospy.loginfo("--- 阶段1: 打开夹爪并移动到预备抓取点 ---")
+        self.open_grippers()
+        success = self.move_through_cartesian_waypoints(approach_waypoints, 'both', velocity_scaling_factor, wait=wait)
+        if not success: rospy.logerr("接近失败！"); return False
+        
+        rospy.loginfo("--- 阶段2: 闭合夹爪进行抓取 ---")
+        self.close_grippers()
+
+        rospy.loginfo("--- 阶段3: 抬起物体 ---")
+        success = self.move_through_cartesian_waypoints(lift_waypoints, 'both', velocity_scaling_factor, wait=wait)
+        if not success: rospy.logerr("抬起失败！"); return False
+
+        rospy.loginfo("--- 抓取任务成功完成 ---")
+        return True
+    
+    def grasp_simple(self, q_start, velocity_scaling_factor=1.0, wait=True):
         T_current_left = controller.forward_kinematics(q_start, arm='left')
         T_current_right = controller.forward_kinematics(q_start, arm='right')
         current_left_pose, current_left_euler = SE3_to_end_pose(T_current_left)
@@ -222,7 +367,26 @@ class K1DualArmController:
         # T_target_right = SE3(T_current_right.t[0], T_current_right.t[1], 0.7) * SE3.RPY([81, -26, 110], unit='deg')
         # 调用move_to_cartesian_pose方法移动到目标位姿
         self.move_to_cartesian_pose((T_target_right, T_target_left), 'both', velocity_scaling_factor, wait)
+    
+    def open_grippers(self):
+        for _ in range(5):
+            controller.gripper_pub.publish(0)
+            controller.gripper_pub2.publish(0)
+            rospy.sleep(0.1)
+        rospy.sleep(1.0) 
+        rospy.loginfo("夹爪已打开。")
+    
+    def close_grippers(self):
+        for _ in range(5):
+            controller.gripper_pub.publish(1000)
+            controller.gripper_pub2.publish(1000)
+            rospy.sleep(0.1)
+        rospy.sleep(1.0)
+        rospy.loginfo("夹爪已闭合。")
 
+    # ================================================================= #
+    # ================        API Functions         ==================== #
+    # ================================================================= #
 
     def move_to_joint_target(self, q_target, velocity_scaling_factor=1.0,wait=True):
         """
@@ -232,7 +396,7 @@ class K1DualArmController:
         q_target = np.array(q_target)
         if q_target.size != self.robot.n:
             print(f"Error: Target joint dimension should be {self.robot.n}, but received {q_target.size}.")
-            return
+            return False
 
         with self.state_lock:
              q_current = self.qnow.copy()
@@ -258,13 +422,107 @@ class K1DualArmController:
             rospy.loginfo("路径已发布供RViz预览")
             if not safe_input_with_rospy("路径已预览，按回车键开始运动，或按 Ctrl+C 取消..."):
                 rospy.loginfo("运动被取消，任务中止。")
-                return # 如果用户按了Ctrl+C，则干净地退出此函数
+                return False # 如果用户按了Ctrl+C，则干净地退出此函数
+            
             print("开始运动！")
             self.start_trajectory_execution()
             if wait:
                 self.wait_for_trajectory_completion()
 
-            self.qnow = q_target 
+            with self.state_lock:
+                self.qnow = q_target
+            return True  
+        
+        return False
+    
+
+    def move_through_joint_waypoints(self, waypoints_18dof, velocity_scaling_factor=1.0, wait=True):
+        """
+        API 3: planning through a series of joint space waypoints.
+
+        Args:
+            waypoints_18dof (list): a 18Dof joint state list of waypoints. [right_arm, left_arm]
+        """
+        rospy.loginfo(f"API: 开始执行关节空间多路径点任务 (共 {len(waypoints_18dof)} 个中间点)")
+        
+        with self.state_lock:
+            q_current = self.qnow.copy()
+
+        full_waypoints = [q_current] + waypoints_18dof
+        
+        unified_traj = self.plan_full_robot_trajectory(full_waypoints, velocity_scaling_factor)
+        
+        if unified_traj and self.split_and_store_trajectory(unified_traj):
+            self.visualize_trajectory_ros(unified_traj)
+
+            if self.enable_preview:
+                # 在RViz中预览关节轨迹
+                self.visualize_joint_trajectory(unified_traj)
+
+            rospy.sleep(0.5)
+            self.start_trajectory_execution()
+            if wait:
+                self.wait_for_trajectory_completion()
+            
+            # 更新当前状态为最后一个路径点
+            with self.state_lock:
+                self.qnow = waypoints_18dof[-1]
+            return True
+        else:
+            rospy.logerr("由于轨迹规划或拆分失败，多路径点任务中止。")
+            return False
+        
+    def move_through_cartesian_waypoints(self, T_waypoints, arm, velocity_scaling_factor=1.0, wait=True, control_orientation=True):
+        """
+        planning through a series of Cartesian space waypoints.
+
+        Args:
+            T_waypoints (list): 一个包含多个SE3目标位姿的列表。
+                            - arm='both'时, 列表元素为元组 (T_left, T_right)。
+            arm (str): 'left', 'right', or 'both'.
+        """
+        rospy.loginfo(f"API: 开始执行笛卡尔空间多路径点任务 for '{arm}' arm(s)")
+        with self.state_lock:
+            q_guess = self.qnow.copy()
+        
+        joint_waypoints = []
+        mask = [1.0]*6 if control_orientation else [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+
+        for i, T_target in enumerate(T_waypoints):
+            q_waypoint = q_guess.copy()
+            ik_success = False
+
+            if arm == 'both':
+                if not isinstance(T_target, (list, tuple)) or len(T_target) != 2:
+                    rospy.logerr(f"错误: arm='both'时, T_waypoints的第 {i} 个元素必须是元组(T_right, T_left)。")
+                    return False
+                T_left, T_right = T_target
+                q_sol_r, success_r = self.inverse_kinematics(T_right, 'right', q_guess, mask)
+                q_sol_l, success_l = self.inverse_kinematics(T_left, 'left', q_guess, mask)
+                if success_r and success_l:
+                    q_waypoint[self.right_arm_joints_indices] = q_sol_r
+                    q_waypoint[self.left_arm_joints_indices] = q_sol_l
+                    ik_success = True
+            elif arm in ['left', 'right']:
+                q_sol, success = self.inverse_kinematics(T_target, arm, q_guess, mask)
+                if success:
+                    indices = self.left_arm_indices if arm == 'left' else self.right_arm_indices
+                    q_waypoint[indices] = q_sol
+                    ik_success = True
+            else:
+                rospy.logerr(f"错误: 无效的arm参数 '{arm}'。请选择 'left', 'right' 或 'both'。")
+                return False
+            
+            if not ik_success:
+                rospy.logerr(f"任务中止: 在第 {i+1} 个路径点处逆解失败。")
+                return False
+                
+            joint_waypoints.append(q_waypoint)
+            q_guess = q_waypoint # 将当前解作为下一次迭代的初始猜测
+
+        # --- 调用关节空间路径点执行函数 ---
+        rospy.loginfo(f"链式逆解成功，共生成 {len(joint_waypoints)} 个关节空间路径点。")
+        return self.move_through_joint_waypoints(joint_waypoints, velocity_scaling_factor, wait)
 
     def move_to_cartesian_pose(self, T_desired, arm, velocity_scaling_factor=1.0,wait=True,control_orientation=True):
         """
@@ -273,7 +531,7 @@ class K1DualArmController:
         Args:
             T_desired: The target pose.
                        - If arm is 'left' or 'right', this is a single SE3 object.
-                       - If arm is 'both', this is a tuple (T_right_desired, T_left_desired).
+                       - If arm is 'both', this is a tuple (T_left_desired, T_right_desired).
             arm (str): Which arm to move ('left', 'right', or 'both').
             velocity_scaling_factor (float): Factor to scale motion speed.
         """
@@ -285,13 +543,13 @@ class K1DualArmController:
         else:
             mask = [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
 
-
+        ik_success = False
         if arm == 'both':
             if not isinstance(T_desired, (list, tuple)) or len(T_desired) != 2:
                 print("Error: For 'both' arms, T_desired must be a tuple of (T_right, T_left).")
-                return
+                return False
 
-            T_right_desired, T_left_desired = T_desired
+            T_left_desired, T_right_desired = T_desired
 
             # Solve for both arms
             q_sol_r, success_r = self.inverse_kinematics(T_right_desired, 'right', self.qnow, mask=mask)
@@ -300,8 +558,9 @@ class K1DualArmController:
 
             if not (success_r and success_l):
                 print("Aborting move: IK solution failed for one or both arms.")
-                return
+                return False
 
+            ik_success = True
             q_target_full[self.right_arm_joints_indices] = q_sol_r
             q_target_full[self.left_arm_joints_indices] = q_sol_l
 
@@ -309,19 +568,24 @@ class K1DualArmController:
             q_sol_arm, success = self.inverse_kinematics(T_desired, arm, self.qnow, mask=mask)
             if not success:
                 print("Aborting move: Cannot find an IK solution.")
-                return
-
+                return False
+            ik_success = True
             if arm == 'left':
                 q_target_full[self.left_arm_joints_indices] = q_sol_arm
             else:
                 q_target_full[self.right_arm_joints_indices] = q_sol_arm
         else:
             print(f"Error: Invalid arm specified: '{arm}'. Use 'left', 'right', or 'both'.")
-            return
+            return False
 
         # Move the whole robot to the new unified joint state
-        self.move_to_joint_target(q_target_full, velocity_scaling_factor, wait=wait)
-    
+
+        if ik_success:
+            return self.move_to_joint_target(q_target_full, velocity_scaling_factor, wait)
+        else:
+            rospy.logerr("任务中止: 逆解失败。")
+            return False 
+        
     # TODO:It has problem, need to be fixed 
     def move_to_cartesian_pose_robust(self, T_desired, arm, velocity_scaling_factor=1.0, wait=True):
         """
@@ -584,6 +848,7 @@ class K1DualArmController:
         rospy.loginfo("等待轨迹执行完成...")
         self.trajectory_completion_event.wait()
         rospy.loginfo("轨迹完成，继续。")
+    
 
     # =================================================================== #
     # ===========  Basic Function   ==================================== #
@@ -701,44 +966,7 @@ class K1DualArmController:
             print(f"关节{i}: {val:7.2f}°", end=' | ')
         print()  # 换行
 
-    def _sanitize_joint_state(self, q_raw):
-        """
-        清理关节状态，确保其在URDF限制内，并在发生裁剪时打印警告。
-        """
-        # 1. 使用np.clip进行裁剪，这会返回一个新的数组
-        q_clipped = np.clip(q_raw, self.joint_limits[0, :], self.joint_limits[1, :])
-
-        # 2. 检查裁剪后的数组是否与原始数组有任何不同
-        # np.any() 会高效地检查两个数组中是否有任何一个元素不相等
-        if np.any(q_raw != q_clipped):
-            
-            # 3. 如果有不同，说明发生了裁剪，我们来构造一条详细的警告信息
-            warning_message = "机器人反馈关节值超出URDF限制, 已自动裁剪. 详情如下:"
-            
-            # 找到所有被裁剪的关节的索引
-            clipped_indices = np.where(q_raw != q_clipped)[0]
-            
-            details = []
-            for idx in clipped_indices:
-                joint_name = self.ALL_JOINT_NAMES[idx]
-                original_val_deg = np.rad2deg(q_raw[idx])
-                clipped_val_deg = np.rad2deg(q_clipped[idx])
-                limit_min_deg = np.rad2deg(self.joint_limits[0, idx])
-                limit_max_deg = np.rad2deg(self.joint_limits[1, idx])
-                
-                detail_str = (
-                    f"  - 关节 '{joint_name}' (索引 {idx}): "
-                    f"反馈值 {original_val_deg:.3f}°, "
-                    f"URDF限制 [{limit_min_deg:.3f}°, {limit_max_deg:.3f}°], "
-                    f"已裁剪为 {clipped_val_deg:.3f}°"
-                )
-                details.append(detail_str)
-
-            # 4. 使用 throttle 模式发布警告，避免刷屏 (每10秒最多报一次)
-            rospy.logwarn_throttle(10.0, f"{warning_message}\n" + "\n".join(details))
-        
-        # 5. 返回被清理过的、保证安全的值
-        return q_clipped
+ 
 
 if __name__ == "__main__":
     # 创建控制器实例
@@ -746,31 +974,44 @@ if __name__ == "__main__":
         controller = K1DualArmController(enble_preview=True)
         print("机器人模型加载成功!")
 
-        # 初始位置
-        q_home  = np.deg2rad(np.array([
-            -1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298, # 右
+        # 测试正运动学
+        # q_full_robot = np.array([-1.768, -58.3,  -54.936,  -118.927,  -127.422,      42.904,  157.592, 
+        #                          0.0, 0.0,
+        #                         1.792, -58.533,   54.750,  -119.007,  127.363,     -43.143, -157.583, 
+        #                         0.0, 0.0])*np.pi/180
+        # q_full_robot[0:9] = q_full_robot[0:9] - np.array([-0.394800,0.299780,-0.858990,-0.411590,-0.022980,0.301080,-0.018380,0.0,0.0])*np.pi/180 # 右臂和左臂的关节角度相同
+        # print(q_full_robot)
+        # T = controller.forward_kinematics(q_full_robot, arm = 'left')
+        # print("初始左臂末端位姿:", SE3_to_end_pose(T))
+        # T = controller.forward_kinematics(q_full_robot, arm = 'right')
+        # print("初始右臂末端位姿:", SE3_to_end_pose(T))
+
+        # sys.exit(0)  # 退出程序
+
+        # # 初始位置
+        q_home = np.deg2rad(np.array([
+            21.3, -51.7, -65.7, -134.2, -121.25, 40.5, 136.6, # 右
             0, 0,
-            1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290,# 左
+            -21.3, -51.7, 65.7, -134.2, 121.25, -40.5, -136.6,# 左
             0, 0
         ]))
-        rospy.sleep(1)
-        mode = "grasp"
-
         # 打印初始末端位姿
         T = controller.forward_kinematics(q_home, arm = 'left')
         print("初始左臂末端位姿:", SE3_to_end_pose(T))
         T = controller.forward_kinematics(q_home, arm = 'right')
         print("初始右臂末端位姿:", SE3_to_end_pose(T))
+        time.sleep(1.0)  # 等待一会儿，确保状态更新
+
         
         if not rospy.is_shutdown():
             # ================================================================= #
             # ================         Demo1        ================ #
             # ================================================================= #
-            # rospy.loginfo("======== Demo 开始: 移动到HOME位置 ========")
-            # # q_init_from_home = controller.qnow.copy()
-            # # print(SE3_to_end_pose(T))
-            # controller.move_to_joint_target(q_home, velocity_scaling_factor=0.3, wait=True)
-            # rospy.loginfo("Already move to initial point")
+            logger.info("======== Demo 开始: 移动到HOME位置 ========")
+            # q_init_from_home = controller.qnow.copy()
+            # print(SE3_to_end_pose(T))
+            controller.move_to_joint_target(q_home, velocity_scaling_factor=0.3, wait=True)
+            logger.success("Already move to initial point")
 
             # ================================================================= #
             # ================         Demo2        ================ #
@@ -782,7 +1023,23 @@ if __name__ == "__main__":
             # ================================================================= #
             # ================         Demo3        ================ #
             # ================================================================= #
-            # rospy.loginfo("\n======== Demo: 双臂移动  ========")
+            logger.info("\n======== Demo: grasp  ========")
+            controller.generic_pick_task(target=(pose_to_se3(0.224, 0.2599, -0.1685,  179.05, 10.455, 73.485), pose_to_se3(0.224, -0.2599, -0.1685,  179.05, -10.455, 180-73.485)),
+                                                 mode="pose", velocity_scaling_factor=0.3)
+            logger.success("已完成抓取任务")
+
+            sys.exit(0)  # 退出程序
+
+
+            mode = "grasp"  # 可选: "grasp", "fling", "fold"
+            # 1. 打开夹爪，为任务做准备
+            rospy.loginfo("正在打开夹爪...")
+            for _ in range(5):
+                controller.gripper_pub.publish(1000)
+                controller.gripper_pub2.publish(1000)
+                rospy.sleep(0.1)
+            rospy.sleep(1.0) # 等待夹爪张开
+
             for _ in range(5):  # 多次发布确保接收
                 controller.gripper_pub.publish(1000)
                 controller.gripper_pub2.publish(1000)

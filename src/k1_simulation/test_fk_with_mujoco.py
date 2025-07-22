@@ -124,13 +124,16 @@ class K1DualArmController:
         except NameError:
             PROJECT_ROOT = os.getcwd()
         
+
         urdf_path = os.path.join(PROJECT_ROOT,"model","K1","K1","urdf","k1.urdf")
+        urdf_path = os.path.join(PROJECT_ROOT,"model","K1","K1","urdf","k1_pgc.urdf")
         xml_path = os.path.join(PROJECT_ROOT,"model","K1","k1_new.xml")
         if not os.path.exists(urdf_path):
             raise FileNotFoundError(f"URDF文件未找到: {urdf_path}")
         
         # 从URDF加载机器人模型
         self.robot = rtb.ERobot.URDF(file_path=urdf_path)
+        print(self.robot)
         
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)

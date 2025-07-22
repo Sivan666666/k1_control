@@ -252,6 +252,8 @@ int main(int argc, char** argv) {
     // std::this_thread::sleep_for(std::chrono::seconds(1)); // 等待机器人稳定
     // ---- 移动到初始位置 ----
     ROS_INFO("Moving to initial joint positions...");
+    
+    // 测试的初始位置，位于桌下一个比较低的点
     JointValue initial_jpos[2];
     initial_jpos[0] = {1.707, -78.003, 72.538, -82.305, 50.506, -5.6, -126.290}; 
     initial_jpos[1] = {-1.554, -78.013, -72.530, -82.317, -50.502, 5.610, 126.298}; 
@@ -278,6 +280,7 @@ int main(int argc, char** argv) {
     jpos[1].jVal[4] = deg2rad(-50.5);
     jpos[1].jVal[5] = deg2rad(5.6);
     jpos[1].jVal[6] = deg2rad(126.3);
+
     // grasp init point
     jpos[0].jVal[0] = deg2rad(-21.3);
     jpos[0].jVal[1] = deg2rad(-51.7);
@@ -294,8 +297,22 @@ int main(int argc, char** argv) {
     jpos[1].jVal[4] = deg2rad(-121.25);
     jpos[1].jVal[5] = deg2rad(40.5);
     jpos[1].jVal[6] = deg2rad(136.6);
-    double jv[] = {deg2rad(10), deg2rad(10)};
-    double ja[] = {deg2rad(50), deg2rad(50)};
+
+
+    JointValue jpos_home[2]={
+        {-21.3, -51.7, 65.7, -134.2, 121.25, -40.5, -136.6},
+        {21.3, -51.7, -65.7, -134.2, -121.25, 40.5, 136.6}
+    };
+    // 将角度值转换为弧度
+    convertJointValueToRad(jpos_home[0]);
+    convertJointValueToRad(jpos_home[1]);
+    ROS_INFO("Moving to home position...,jpos_home[0]: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f], jpos_home[1]: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
+        jpos_home[0].jVal[0], jpos_home[0].jVal[1], jpos_home[0].jVal[2], jpos_home[0].jVal[3], jpos_home[0].jVal[4], jpos_home[0].jVal[5], jpos_home[0].jVal[6],
+        jpos_home[1].jVal[0], jpos_home[1].jVal[1], jpos_home[1].jVal[2], jpos_home[1].jVal[3], jpos_home[1].jVal[4], jpos_home[1].jVal[5], jpos_home[1].jVal[6]);
+    
+    // MoveJ to home position 
+    double jv[] = {deg2rad(10), deg2rad(10)}; // velocity
+    double ja[] = {deg2rad(50), deg2rad(50)}; // acceleration 
     MoveMode mode[] = {MoveMode::ABS, MoveMode::ABS};
     robot.robot_run_multi_movj(DUAL, mode, true, jpos, jv, ja);
     ROS_INFO("Initial position reached.");
